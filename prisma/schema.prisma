@@ -1,0 +1,175 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  WAITER
+  KITCHEN
+  MANAGER
+}
+
+enum OrderStatus {
+  PENDING
+  ACCEPTED
+  PREPARING
+  READY
+  SERVED
+  REJECTED
+  CANCELED
+}
+
+enum ReceiptStatus {
+  PREPARED
+  SENDING
+  UNKNOWN
+  ISSUED
+  FAILED
+}
+
+model Restaurant {
+  id          String      @id @default(uuid())
+  slug        String      @unique
+  name        String
+  tagline     String      @default("")
+  image       String      @default("")
+  logo        String      @default("")
+  categories  Category[]
+  tables      DiningTable[]
+  employees   Employee[]
+}
+
+model Category {
+  id           String      @id @default(uuid())
+  restaurantId String
+  restaurant   Restaurant  @relation(fields: [restaurantId], references: [id])
+  name         String
+  position     Int         @default(0)
+  products     Product[]
+  @@index([restaurantId, position])
+}
+
+model Product {
+  id          String   @id @default(uuid())
+  categoryId  String
+  category    Category @relation(fields: [categoryId], references: [id])
+  name        String
+  description String   @default("")
+  image       String   @default("")
+  price       Int
+  available   Boolean  @default(true)
+  createdOrder DateTime @default(now())
+  options     Json     @default("[]")
+  fiscalCode  String
+  vatCode     String
+  @@index([categoryId])
+}
+
+model DiningTable {
+  id           String      @id @default(uuid())
+  code         String      @unique @default(uuid())
+  restaurantId String
+  restaurant   Restaurant  @relation(fields: [restaurantId], references: [id])
+  number       Int
+  seats        Int         @default(4)
+  x            Float       @default(25)
+  y            Float       @default(25)
+  visits       Visit[]
+  @@unique([restaurantId, number])
+}
+
+model Visit {
+  id            String    @id @default(uuid())
+  tableId       String
+  table         DiningTable @relation(fields: [tableId], references: [id])
+  activeTable   String?   @unique
+  pin           String?
+  cart          Json      @default("[]")
+  openedAt      DateTime  @default(now())
+  closedAt      DateTime?
+  orders        Order[]
+  guests        GuestAccess[]
+  calls         ServiceCall[]
+  receipts      Receipt[]
+  cartOps       CartOperation[]
+  @@index([tableId, openedAt])
+}
+
+model GuestAccess {
+  digest  String   @id
+  visitId String
+  visit   Visit    @relation(fields: [visitId], references: [id])
+  @@index([visitId])
+}
+
+model CartOperation {
+  visitId String
+  visit   Visit  @relation(fields: [visitId], references: [id])
+  key     String
+  @@id([visitId, key])
+}
+
+model Order {
+  id        String      @id @default(uuid())
+  visitId   String
+  visit     Visit       @relation(fields: [visitId], references: [id])
+  key       String
+  source    String
+  status    OrderStatus
+  lines     Json
+  reason    String?
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+  @@unique([visitId, key])
+  @@index([visitId, status])
+}
+
+model ServiceCall {
+  id         String    @id @default(uuid())
+  visitId    String
+  visit      Visit     @relation(fields: [visitId], references: [id])
+  openVisit  String?   @unique
+  createdAt  DateTime  @default(now())
+  resolvedAt DateTime?
+}
+
+model Receipt {
+  id           String        @id @default(uuid())
+  visitId      String
+  visit        Visit         @relation(fields: [visitId], references: [id])
+  lockedVisit  String?       @unique
+  status       ReceiptStatus @default(PREPARED)
+  lines        Json
+  total        Int
+  method       String
+  reference    String?
+  createdAt    DateTime      @default(now())
+  settledAt    DateTime?
+  @@index([visitId, createdAt])
+}
+
+model Employee {
+  id           String         @id @default(uuid())
+  restaurantId String
+  restaurant   Restaurant     @relation(fields: [restaurantId], references: [id])
+  username     String
+  name         String
+  password     String
+  roles        Role[]
+  canFiscalize Boolean        @default(false)
+  active       Boolean        @default(true)
+  access       StaffAccess[]
+  @@unique([restaurantId, username])
+}
+
+model StaffAccess {
+  digest     String   @id
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id])
+  expiresAt  DateTime
+  @@index([employeeId])
+}

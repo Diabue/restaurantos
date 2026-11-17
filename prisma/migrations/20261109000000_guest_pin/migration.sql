@@ -1,0 +1,3 @@
+ALTER TABLE "Visit" ALTER COLUMN "pin" DROP NOT NULL;
+
+UPDATE "Visit" SET "pin" = NULL WHERE "activeTable" IS NULL;
