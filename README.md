@@ -2,6 +2,71 @@
 
 Polskie menu QR, wspólny koszyk stolika i aplikacja Android z trybami Kelner, Kuchnia i Manager. Wersja demonstracyjna używa prawdziwej bazy PostgreSQL i symuluje wystawianie paragonu.
 
+## Zrzuty ekranu
+
+<details open>
+<summary>Kelner</summary>
+
+**Mapa sali**
+
+![Mapa sali](docs/screenshots/kelner-mapa.png)
+
+**Otwarcie stolika**
+
+![Otwarcie stolika](docs/screenshots/kelner-otwarcie.png)
+
+**Szczegóły stolika**
+
+![Szczegóły stolika](docs/screenshots/kelner-stolik.png)
+
+**Zamówienie od kelnera**
+
+![Zamówienie od kelnera](docs/screenshots/kelner-zamowienie.png)
+
+</details>
+
+<details>
+<summary>Kuchnia</summary>
+
+**Kolejka zamówień**
+
+![Kolejka zamówień](docs/screenshots/kuchnia-kolejka.png)
+
+</details>
+
+<details>
+<summary>Manager</summary>
+
+**Zarządzanie menu**
+
+![Zarządzanie menu](docs/screenshots/manager-menu.png)
+
+**Edycja planu sali**
+
+![Edycja planu sali](docs/screenshots/manager-plan.png)
+
+**Kod QR stolika**
+
+![Kod QR stolika](docs/screenshots/manager-qr.png)
+
+**Konta i uprawnienia**
+
+![Konta i uprawnienia](docs/screenshots/manager-personel.png)
+
+**Edycja konta pracownika**
+
+![Edycja konta pracownika](docs/screenshots/manager-konto.png)
+
+**Historia wizyt i rozliczeń**
+
+![Historia wizyt i rozliczeń](docs/screenshots/manager-historia.png)
+
+**Edycja danych lokalu**
+
+![Edycja danych lokalu](docs/screenshots/manager-lokal.png)
+
+</details>
+
 ## Demo na Windows
 
 W katalogu projektu uruchom:
