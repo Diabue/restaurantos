@@ -4,8 +4,7 @@ Polskie menu QR, wspólny koszyk stolika i aplikacja Android z trybami Kelner, K
 
 ## Zrzuty ekranu
 
-<details open>
-<summary>Kelner</summary>
+### Kelner
 
 **Mapa sali**
 
@@ -23,19 +22,13 @@ Polskie menu QR, wspólny koszyk stolika i aplikacja Android z trybami Kelner, K
 
 ![Zamówienie od kelnera](docs/screenshots/kelner-zamowienie.png)
 
-</details>
-
-<details>
-<summary>Kuchnia</summary>
+### Kuchnia
 
 **Kolejka zamówień**
 
 ![Kolejka zamówień](docs/screenshots/kuchnia-kolejka.png)
 
-</details>
-
-<details>
-<summary>Manager</summary>
+### Manager
 
 **Zarządzanie menu**
 
@@ -64,8 +57,6 @@ Polskie menu QR, wspólny koszyk stolika i aplikacja Android z trybami Kelner, K
 **Edycja danych lokalu**
 
 ![Edycja danych lokalu](docs/screenshots/manager-lokal.png)
-
-</details>
 
 ## Demo na Windows
 
