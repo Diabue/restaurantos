@@ -18,7 +18,9 @@ export async function api<T>(path: string, { secret, body, station }: { secret?:
       body: multipart ? body : body === undefined ? undefined : JSON.stringify(body),
     });
   } catch { throw new ApiError(0, 'Brak połączenia. Sprawdź internet i spróbuj ponownie.'); }
-  const data = await response.json().catch(() => null);
+  const data = await response.json().catch(() => {
+    throw new ApiError(503, 'Usługa jest chwilowo niedostępna. Spróbuj ponownie później.');
+  });
   if (!response.ok) throw new ApiError(response.status, data?.message ?? 'Nie udało się wykonać operacji.');
   return data as T;
 }
