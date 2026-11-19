@@ -33,7 +33,6 @@ export async function handleEdge(req: Request): Promise<Response> {
     let result: unknown;
     let m: RegExpMatchArray | null;
     if (!post && path === '/health') { await db.$queryRaw`SELECT 1`; result = {ok:true}; }
-    else if (!post && path === '/demo/tables') result = await guest.demoTables();
     else if (!post && (m = path.match(/^\/menu\/([^/]+)$/))) result = await guest.menu(m[1]);
     else if (post && (m = path.match(/^\/menu\/([^/]+)\/(start|join)$/))) {
       await db.$executeRaw`INSERT INTO restaurantos."AccessAttempt" (key,count,expires) VALUES (${ip + ':' + m[1]},1,now()+interval '5 minutes') ON CONFLICT (key) DO UPDATE SET count = CASE WHEN "AccessAttempt".expires < now() THEN 1 ELSE "AccessAttempt".count+1 END, expires = CASE WHEN "AccessAttempt".expires < now() THEN now()+interval '5 minutes' ELSE "AccessAttempt".expires END`;

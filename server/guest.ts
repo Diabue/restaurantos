@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { lineTotal } from '../shared/model';
 import { Live } from './live';
 import { asLines, editable, json, pricedLine, selection } from './orders';
-import { Attempts, bearer, db, demo, digest, id, read, requireGuest, token, transact, type Tx } from './store';
+import { Attempts, bearer, db, digest, id, read, requireGuest, token, transact, type Tx } from './store';
 
 const pinInput = z.object({ pin: z.string().regex(/^\d{6}$/, 'Wpisz dokładnie 6 cyfr.') });
 
@@ -16,16 +16,6 @@ async function grantGuestAccess(tx: Tx, visitId: string) {
 @Controller('api')
 export class GuestController {
   constructor(@Inject(Live) private readonly live: Live, @Inject(Attempts) private readonly attempts: Attempts) {}
-
-  @Get('demo/tables')
-  async demoTables() {
-    if (!demo()) throw new NotFoundException();
-    const entry = await db.diningTable.findUnique({ where: { code: 'demo' }, select: {
-      restaurant: { select: { name: true, tables: { orderBy: { number: 'asc' }, select: { code: true, number: true } } } },
-    } });
-    if (!entry) throw new NotFoundException('Nie znaleziono stolików demonstracyjnych.');
-    return entry.restaurant;
-  }
 
   @Get('menu/:code')
   async menu(@Param('code') code: string) {

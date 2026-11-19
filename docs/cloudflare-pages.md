@@ -2,7 +2,8 @@
 
 Frontend i Android pozostają w repozytorium `Diabue/restaurantos`. Frontend jest publikowany automatycznie z gałęzi `main` na Cloudflare Pages.
 
-- Adres: https://restaurantos.maxstronytest.uk
+- Adres: https://restaurantos.maxstronytest.uk — instrukcja zeskanowania kodu; bez publicznego wyboru stolika.
+- Kody QR prowadzą bezpośrednio do `/t/<kod>`. Linki stolików są dostępne dla managera po zalogowaniu.
 - Panel obsługi: https://restaurantos.maxstronytest.uk/staff?venue=oliwa
 - Build Pages: `npm run build:web`, katalog `dist`, Node 24.
 - Zmienna Pages: `VITE_SUPABASE_URL=https://nyubvcwrthpbeeaiaquu.supabase.co`.
