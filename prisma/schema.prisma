@@ -31,6 +31,11 @@ enum ReceiptStatus {
   FAILED
 }
 
+enum PrepStation {
+  KITCHEN
+  BAR
+}
+
 model Restaurant {
   id          String      @id @default(uuid())
   slug        String      @unique
@@ -38,6 +43,7 @@ model Restaurant {
   tagline     String      @default("")
   image       String      @default("")
   logo        String      @default("")
+  kitchenAlertMinutes Int @default(15)
   categories  Category[]
   tables      DiningTable[]
   employees   Employee[]
@@ -64,6 +70,7 @@ model Product {
   available   Boolean  @default(true)
   createdOrder DateTime @default(now())
   options     Json     @default("[]")
+  station     PrepStation @default(KITCHEN)
   fiscalCode  String
   vatCode     String
   @@index([categoryId])
@@ -89,6 +96,7 @@ model Visit {
   activeTable   String?   @unique
   pin           String?
   cart          Json      @default("[]")
+  transfers     Json      @default("[]")
   openedAt      DateTime  @default(now())
   closedAt      DateTime?
   orders        Order[]
@@ -123,6 +131,7 @@ model Order {
   lines     Json
   reason    String?
   createdAt DateTime    @default(now())
+  acceptedAt DateTime?
   updatedAt DateTime    @updatedAt
   @@unique([visitId, key])
   @@index([visitId, status])
@@ -133,6 +142,7 @@ model ServiceCall {
   visitId    String
   visit      Visit     @relation(fields: [visitId], references: [id])
   openVisit  String?   @unique
+  reason     String    @default("HELP")
   createdAt  DateTime  @default(now())
   resolvedAt DateTime?
 }

@@ -8,6 +8,7 @@ import { WebSocket } from 'ws';
 import { db, passwordHash } from '../server/store';
 import { productImageDirectory } from '../server/product-images';
 import type { GuestState, Menu, Order, Receipt, Table } from '../shared/model';
+import type { Ticket } from '../shared/kitchen';
 
 const base = process.env.TEST_ORIGIN || `http://127.0.0.1:${process.env.PORT || 3001}`;
 
@@ -41,7 +42,8 @@ test('guest PIN, two phones, waiter approval, kitchen, cancellation and fiscal r
   }, include: { tables: true, categories: { include: { products: true } } } });
   const other = await db.restaurant.create({ data: { slug: otherSlug, name: otherSlug, employees: { create: { username: 'waiter', name: 'Other', roles: ['WAITER'], password: passwordDigest } } } });
   const table = restaurant.tables[0];
-  const [fries, drink] = restaurant.categories[0].products;
+  const fries = restaurant.categories[0].products.find(product => product.fiscalCode === 'FR')!;
+  const drink = restaurant.categories[0].products.find(product => product.fiscalCode === 'DR')!;
   const login = async (user: string, venue = slug) => (await request<{ secret: string }>('/staff/login', { slug: venue, user, password })).secret;
   let live: WebSocket | undefined;
   let uploadedImage: string | undefined;
@@ -58,7 +60,12 @@ test('guest PIN, two phones, waiter approval, kitchen, cancellation and fiscal r
     }
     const [waiter, kitchen, manager, outsider] = await Promise.all([login('waiter'), login('kitchen'), login('manager'), login('waiter', otherSlug)]);
     const floor = (secret: string) => request<{ tables: Table[] }>('/staff/floor', undefined, secret);
-    const queue = () => request<Order[]>('/staff/kitchen', undefined, kitchen);
+    const queue = () => request<Ticket[]>('/staff/kitchen', undefined, kitchen);
+    const venueSettings = { name: restaurant.name, tagline: '', image: '', logo: '', kitchenAlertMinutes: 4 };
+    await request('/manager/restaurant', venueSettings, kitchen, 403);
+    await request('/manager/restaurant', { ...venueSettings, kitchenAlertMinutes: 0 }, manager, 400);
+    await request('/manager/restaurant', venueSettings, manager);
+    await request('/manager/product', { ...drink, station: 'BAR' }, manager);
     assert.equal((await floor(outsider)).tables.length, 0);
     await request('/staff/floor', undefined, kitchen, 403);
     await request('/manager', undefined, waiter, 403);
@@ -139,17 +146,47 @@ test('guest PIN, two phones, waiter approval, kitchen, cancellation and fiscal r
     await request(`/staff/orders/${sent.id}`, { action: 'ACCEPT' }, outsider, 404);
     await request(`/staff/orders/${sent.id}`, { action: 'ACCEPT' }, kitchen, 403);
     await request(`/staff/orders/${sent.id}`, { action: 'ACCEPT' }, waiter);
-    assert.deepEqual((await queue()).map(order => order.id), [sent.id]);
+    const [acceptedTicket] = await queue();
+    assert.equal(acceptedTicket.id, sent.id);
+    assert.ok(acceptedTicket.acceptedAt && Date.parse(acceptedTicket.acceptedAt) >= Date.parse(sent.createdAt));
+    assert.equal(acceptedTicket.kitchenAlertMinutes, 4);
+    const drinkLine = acceptedTicket.lines.find(line => line.name === 'Drink')!;
+    assert.equal(drinkLine.station, 'BAR');
+    const orderPath = `/staff/orders/${sent.id}`;
+    const correction = { action: 'CHANGE_LINE', key: drinkLine.key, request: randomUUID(), reason: 'Dla drugiej osoby',
+      previousQuantity: 1, previousNote: '', quantity: 2, note: 'Bez lodu' };
+    await request(orderPath, correction, kitchen, 403);
+    await request(orderPath, correction, waiter);
+    await request(orderPath, correction, waiter);
+    await request(orderPath, { ...correction, request: randomUUID(), quantity: 3 }, waiter, 409);
+    const corrected = (await queue())[0].lines.find(line => line.key === drinkLine.key)!;
+    assert.equal(corrected.quantity, 2);
+    assert.equal(corrected.note, 'Bez lodu');
+    assert.equal(corrected.changes?.length, 1);
+    assert.ok(corrected.changes?.[0].at);
+    assert.equal(corrected.changes?.[0].reason, correction.reason);
+    await request(orderPath, { action: 'PREPARE', station: 'BAR' }, kitchen);
+    await request(orderPath, { action: 'READY_LINE', key: drinkLine.key }, waiter, 403);
+    await request(orderPath, { action: 'READY_LINE', key: drinkLine.key }, kitchen);
+    const partial = (await queue())[0];
+    assert.equal(partial.status, 'PREPARING');
+    assert.ok(partial.lines.find(line => line.key === drinkLine.key)?.readyAt);
+    assert.equal(partial.lines.find(line => line.name === 'Fries')?.startedAt, undefined);
     await request(`/staff/orders/${sent.id}`, { action: 'CANCEL_LINE', key: sent.lines.find(line => line.productId === drink.id)?.key, reason: 'Gość zmienił zdanie' }, waiter);
     assert.equal((await queue())[0].lines.find(line => line.name === 'Drink')?.canceled, 'Gość zmienił zdanie');
+    assert.ok((await queue())[0].lines.find(line => line.name === 'Drink')?.canceledAt);
     await request(`/staff/orders/${sent.id}`, { action: 'PREPARE' }, kitchen);
     await request(`/staff/orders/${sent.id}`, { action: 'READY' }, kitchen);
     await request(`/staff/orders/${sent.id}`, { action: 'SERVE' }, waiter);
 
-    await request('/guest/call', {}, phone1);
-    await request('/guest/call', {}, phone2);
+    await request('/guest/call', { reason: 'invalid' }, phone1, 400);
+    await request('/guest/call', { reason: 'BILL' }, phone1);
+    const firstCall = (await request<GuestState>('/guest', undefined, phone1)).call!;
+    await request('/guest/call', { reason: 'HELP' }, phone2);
     const visit = (await floor(waiter)).tables[0].visit!;
     assert.equal(visit.calls.length, 1);
+    assert.equal(visit.calls[0].createdAt, firstCall.createdAt);
+    assert.equal(visit.calls[0].reason, 'BILL');
     await request(`/staff/calls/${visit.calls[0].id}/resolve`, {}, waiter);
     assert.equal((await request<GuestState>('/guest', undefined, phone2)).call, null);
 
@@ -157,6 +194,9 @@ test('guest PIN, two phones, waiter approval, kitchen, cancellation and fiscal r
     const checkout = `/fiscal/tables/${table.id}/prepare`;
     await request(checkout, { method: 'CARD' }, waiter, 403);
     const receipt = await request<Receipt>(checkout, { method: 'CARD' }, waiter, undefined, station);
+    const destination = await db.diningTable.create({ data: { restaurantId: restaurant.id, number: 9 } });
+    const transferPath = `/staff/tables/${table.id}/transfer`;
+    await request(transferPath, { visitId: visit.id, targetTableId: destination.id, request: randomUUID() }, waiter, 409);
     assert.equal(receipt.total, 2800);
     assert.equal((await request<Receipt>(checkout, { method: 'CARD' }, waiter, undefined, station)).id, receipt.id);
     await request(`/fiscal/${receipt.id}/claim`, {}, waiter, undefined, station);
@@ -186,6 +226,54 @@ test('guest PIN, two phones, waiter approval, kitchen, cancellation and fiscal r
     assert.deepEqual((await request<GuestState>('/guest', undefined, nextPhone)).orders.map(order => order.id), [manual.id]);
     await request(`${menu}/join`, { pin }, '', 401);
     await join(nextPin);
+
+    const anotherDestination = await db.diningTable.create({ data: { restaurantId: restaurant.id, number: 10 } });
+    const foreignTable = await db.diningTable.create({ data: { restaurantId: other.id, number: 1 } });
+    const moveVisit = (targetTableId: string) => ({ visitId: opened.id, targetTableId, request: randomUUID() });
+    await request(transferPath, moveVisit(destination.id), kitchen, 403);
+    await request(transferPath, moveVisit(destination.id), outsider, 404);
+    await request(transferPath, moveVisit(foreignTable.id), waiter, 404);
+    await request('/guest/call', {}, nextPhone);
+    await request('/guest/cart', add(fries.id), nextPhone);
+
+    const destinations = [destination, anotherDestination];
+    const moves = destinations.map(target => moveVisit(target.id));
+    const competing = await Promise.all(moves.map(body => request<{ tableId?: string }>(transferPath, body, waiter, [201, 409])));
+    assert.equal(competing.filter(result => result.tableId).length, 1);
+    const accepted = competing.findIndex(result => !!result.tableId);
+    const target = destinations[accepted];
+    assert.equal(competing[accepted].tableId, target.id);
+    assert.deepEqual(await request(transferPath, moves[accepted], waiter), { tableId: target.id });
+    const movedFloor = await floor(waiter);
+    const moved = movedFloor.tables.find(item => item.id === target.id)!.visit!;
+    assert.equal(movedFloor.tables.find(item => item.id === table.id)?.visit, null);
+    assert.equal(moved.id, opened.id);
+    assert.equal(moved.total, fries.price);
+    assert.equal(moved.orders[0].id, manual.id);
+    assert.equal(moved.pin, nextPin);
+    const forPhone = await request<GuestState>('/guest', undefined, nextPhone);
+    assert.deepEqual(forPhone.table, { number: target.number, code: target.code });
+    assert.ok(forPhone.call);
+    assert.equal(forPhone.cart[0].productId, fries.id);
+    const ticket = (await request<{ id: string; table: number }[]>('/staff/kitchen', undefined, kitchen)).find(order => order.id === manual.id);
+    assert.equal(ticket?.table, target.number);
+    assert.deepEqual((await request<Menu>(menu)).table, { number: 8, pinConfigured: false });
+    await request(`${menu}/join`, { pin: nextPin }, '', 409);
+    const joinedNew = await request<{ secret: string }>(`/menu/${target.code}/join`, { pin: nextPin });
+    assert.equal((await request<GuestState>('/guest', undefined, joinedNew.secret)).orders[0].id, manual.id);
+    const history = await request<{ history: { id: string; transfers: { fromNumber: number; toNumber: number; employeeName: string }[] }[] }>('/manager', undefined, manager);
+    const audit = history.history.find(entry => entry.id === opened.id)!.transfers;
+    assert.equal(audit.length, 1);
+    assert.equal(audit[0].fromNumber, 8);
+    assert.equal(audit[0].toNumber, target.number);
+    assert.equal(audit[0].employeeName, 'Waiter');
+    const replacement = await request<{ secret: string }>(`${menu}/start`, { pin: '904162' });
+    const staleExpected = { visitId: opened.id };
+    await request(`/staff/tables/${table.id}/manual`, { ...staleExpected, request: randomUUID(), items: [{ productId: fries.id, quantity: 1, note: '' }] }, waiter, 409);
+    await request(checkout, { ...staleExpected, method: 'CARD' }, waiter, 409, station);
+    await request(`/staff/tables/${table.id}/close-empty`, staleExpected, waiter, 409);
+    assert.deepEqual((await request<GuestState>('/guest', undefined, replacement.secret)).orders, []);
+    await request(`/staff/tables/${target.id}/transfer`, moveVisit(table.id), waiter, 409);
   } finally {
     live?.terminate();
     if (uploadedImage) {

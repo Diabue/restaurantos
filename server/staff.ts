@@ -1,8 +1,10 @@
 import { Body, ConflictException, Controller, Get, Headers, Inject, Ip, NotFoundException, Param, Post, UnauthorizedException } from '@nestjs/common';
 import { z } from 'zod';
+import type { TableTransfer } from '../shared/model';
 import { Live } from './live';
+import { applyOrderAction, orderAction } from './kitchen';
 import { activeVisit, asLines, editable, json, orderInclude, pricedLine, selection, withTotal } from './orders';
-import { Attempts, bearer, checkPassword, db, demo, digest, id, note, passwordHash, read, requireStaff, token, transact, username } from './store';
+import { Attempts, bearer, checkPassword, db, demo, digest, id, passwordHash, read, requireStaff, token, transact, username } from './store';
 
 const invalidHash = passwordHash('invalid staff login');
 const identity = (employee: Awaited<ReturnType<typeof requireStaff>>) => ({
@@ -51,13 +53,15 @@ export class StaffController {
 
   @Get('kitchen')
   async kitchen(@Headers('authorization') auth: string) {
-    const { restaurantId } = await requireStaff(db, bearer(auth), 'KITCHEN');
+    const { restaurantId, restaurant } = await requireStaff(db, bearer(auth), 'KITCHEN');
     const orders = await db.order.findMany({ where: { visit: { activeTable: { not: null }, table: { restaurantId } },
       status: { in: ['ACCEPTED', 'PREPARING', 'READY', 'SERVED', 'CANCELED'] } }, orderBy: { createdAt: 'asc' },
-      include: { visit: { include: { table: true } } } });
-    return orders.filter(order => order.status !== 'SERVED' || asLines(order.lines).some(line => line.canceled))
-      .map(({ id, status, createdAt, lines, visit, reason }) => ({ id, status, createdAt, reason, table: visit.table.number,
-      lines: asLines(lines).map(({ key, name, option, note, quantity, canceled }) => ({ key, name, option, note, quantity, canceled })),
+      include: { visit: { select: { table: { select: { number: true } } } } } });
+    return orders.filter(order => order.status !== 'SERVED' || asLines(order.lines).some(line => line.canceled || line.changes?.length))
+      .map(({ id, status, createdAt, acceptedAt, lines, visit, reason }) => ({ id, status, createdAt, acceptedAt, reason,
+      table: visit.table.number, kitchenAlertMinutes: restaurant.kitchenAlertMinutes,
+      lines: asLines(lines).map(({ key, name, option, note, quantity, station, startedAt, readyAt, canceled, canceledAt, changes }) =>
+        ({ key, name, option, note, quantity, station, startedAt, readyAt, canceled, canceledAt, changes })),
     }));
   }
 
@@ -76,10 +80,11 @@ export class StaffController {
   }
 
   @Post('tables/:tableId/close-empty')
-  async closeEmpty(@Headers('authorization') auth: string, @Param('tableId') tableId: string) {
+  async closeEmpty(@Headers('authorization') auth: string, @Param('tableId') tableId: string, @Body() input?: unknown) {
+    const { visitId } = read(z.object({ visitId: id.optional() }), input ?? {});
     const visit = await transact(async tx => {
       const { restaurantId } = await requireStaff(tx, bearer(auth), 'WAITER');
-      const visit = await activeVisit(tx, restaurantId, tableId);
+      const visit = await activeVisit(tx, restaurantId, tableId, visitId);
       await editable(tx, visit.id);
       if (asLines(visit.cart).length || await tx.order.count({ where: { visitId: visit.id, status: { notIn: ['REJECTED', 'CANCELED'] } } })) {
         throw new ConflictException('Na stoliku są pozycje lub zamówienia do rozliczenia.');
@@ -94,19 +99,52 @@ export class StaffController {
 
   @Post('tables/:tableId/manual')
   async manual(@Headers('authorization') auth: string, @Param('tableId') tableId: string, @Body() input: unknown) {
-    const { request, items } = read(z.object({ request: id, items: z.array(selection).min(1).max(50) }), input);
+    const { request, items, visitId } = read(z.object({ request: id, items: z.array(selection).min(1).max(50), visitId: id.optional() }), input);
     const { visit, order } = await transact(async tx => {
       const { restaurantId } = await requireStaff(tx, bearer(auth), 'WAITER');
-      const visit = await activeVisit(tx, restaurantId, tableId);
+      const visit = await activeVisit(tx, restaurantId, tableId, visitId);
       const existing = await tx.order.findUnique({ where: { visitId_key: { visitId: visit.id, key: request } } });
       if (existing) return { visit, order: existing };
       await editable(tx, visit.id);
       const lines = await Promise.all(items.map(async (item, index) => ({ ...(await pricedLine(tx, restaurantId, item)), key: String(index) })));
-      const order = await tx.order.create({ data: { visitId: visit.id, key: request, status: 'ACCEPTED', source: 'STAFF', lines: json(lines) } });
+      const order = await tx.order.create({ data: { visitId: visit.id, key: request, status: 'ACCEPTED', source: 'STAFF', acceptedAt: new Date(), lines: json(lines) } });
       return { visit, order };
     });
     this.live.publish(visit.table.restaurantId, visit.id);
     return order;
+  }
+
+  @Post('tables/:tableId/transfer')
+  async transfer(@Headers('authorization') auth: string, @Param('tableId') tableId: string, @Body() input: unknown) {
+    const { visitId, targetTableId, request } = read(z.object({ visitId: id, targetTableId: id, request: id }), input);
+    const result = await transact(async tx => {
+      const employee = await requireStaff(tx, bearer(auth), 'WAITER');
+      const restaurantId = employee.restaurantId;
+      const visit = await tx.visit.findFirst({ where: { id: visitId, table: { restaurantId } }, include: { table: true } });
+      if (!visit) throw new NotFoundException('Nie znaleziono wizyty.');
+      if (!visit.activeTable) throw new ConflictException('Ta wizyta jest już zamknięta.');
+      const transfers = visit.transfers as TableTransfer[];
+      const previous = transfers.find(move => move.request === request);
+      if (previous) {
+        if (previous.fromId !== tableId || previous.toId !== targetTableId) throw new ConflictException('Żądanie dotyczy innego przeniesienia.');
+        return { restaurantId, tableId: visit.activeTable };
+      }
+      if (visit.activeTable !== tableId) throw new ConflictException('Wizyta została już przeniesiona. Sprawdź mapę sali.');
+      if (tableId === targetTableId) throw new ConflictException('Wybierz inny stolik.');
+      await editable(tx, visit.id);
+      const target = await tx.diningTable.findFirst({ where: { id: targetTableId, restaurantId } });
+      if (!target) throw new NotFoundException('Nie znaleziono docelowego stolika.');
+      const occupied = await tx.visit.findUnique({ where: { activeTable: target.id }, select: { id: true } });
+      if (occupied) throw new ConflictException('Wybrany stolik jest już zajęty.');
+      const move: TableTransfer = {
+        request, fromId: tableId, toId: target.id, fromNumber: visit.table.number, toNumber: target.number,
+        employeeId: employee.id, employeeName: employee.name, at: new Date().toISOString(),
+      };
+      await tx.visit.update({ where: { id: visit.id }, data: { tableId: target.id, activeTable: target.id, transfers: [...transfers, move] } });
+      return { restaurantId, tableId: target.id };
+    });
+    this.live.publish(result.restaurantId, visitId, true);
+    return { tableId: result.tableId };
   }
 
   @Post('tables/:tableId/discard-cart')
@@ -130,27 +168,15 @@ export class StaffController {
 
   @Post('orders/:orderId')
   async updateOrder(@Headers('authorization') auth: string, @Param('orderId') orderId: string, @Body() input: unknown) {
-    const data = read(z.object({ action: z.enum(['ACCEPT', 'REJECT', 'PREPARE', 'READY', 'SERVE', 'CANCEL_LINE']), key: z.string().max(600).optional(), reason: note.optional() }), input);
-    const kitchen = ['PREPARE', 'READY'].includes(data.action);
+    const data = read(orderAction, input);
+    const kitchen = ['PREPARE', 'READY', 'READY_LINE'].includes(data.action);
     const result = await transact(async tx => {
       const { restaurantId } = await requireStaff(tx, bearer(auth), kitchen ? 'KITCHEN' : 'WAITER');
       const order = await tx.order.findFirst({ where: { id: orderId, visit: { activeTable: { not: null }, table: { restaurantId } } } });
       if (!order) throw new NotFoundException('Nie znaleziono aktywnego zamówienia.');
       if (!kitchen && data.action !== 'SERVE') await editable(tx, order.visitId);
-      const actions = { ACCEPT: ['PENDING', 'ACCEPTED'], REJECT: ['PENDING', 'REJECTED'], PREPARE: ['ACCEPTED', 'PREPARING'], READY: ['PREPARING', 'READY'], SERVE: ['READY', 'SERVED'] } as const;
-      if (data.action === 'CANCEL_LINE') {
-        if (!data.reason || !['ACCEPTED', 'PREPARING', 'READY', 'SERVED'].includes(order.status)) throw new ConflictException('Wybierz wysłaną pozycję i podaj powód anulowania.');
-        const lines = asLines(order.lines);
-        const index = lines.findIndex(line => line.key === data.key && !line.canceled);
-        if (index < 0) throw new NotFoundException('Nie znaleziono pozycji do anulowania.');
-        lines[index] = { ...lines[index], canceled: data.reason };
-        await tx.order.update({ where: { id: order.id }, data: { lines: json(lines), status: lines.every(line => line.canceled) ? 'CANCELED' : order.status } });
-      } else {
-        const [from, to] = actions[data.action];
-        if (order.status === to) return { restaurantId, visitId: order.visitId };
-        if (order.status !== from || (data.action === 'REJECT' && !data.reason)) throw new ConflictException('Status zamówienia się zmienił lub brakuje powodu odrzucenia.');
-        await tx.order.update({ where: { id: order.id }, data: { status: to, reason: data.action === 'REJECT' ? data.reason : undefined } });
-      }
+      const update = applyOrderAction(order, data, new Date());
+      if (update) await tx.order.update({ where: { id: order.id }, data: update });
       return { restaurantId, visitId: order.visitId };
     });
     this.live.publish(result.restaurantId, result.visitId);

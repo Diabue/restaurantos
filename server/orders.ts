@@ -18,7 +18,7 @@ export async function pricedLine(tx: Tx, restaurantId: string, item: z.infer<typ
   return {
     key: JSON.stringify([product.id, option?.id ?? '', item.note]), productId: product.id, name: product.name,
     optionId: option?.id, option: option?.name, note: item.note, price: product.price + (option?.extra ?? 0),
-    quantity: item.quantity, fiscalCode: product.fiscalCode, vatCode: product.vatCode,
+    quantity: item.quantity, fiscalCode: product.fiscalCode, vatCode: product.vatCode, station: product.station,
   };
 }
 
@@ -32,9 +32,10 @@ export async function editable(tx: Tx, visitId: string) {
   if (lock) throw new ConflictException('Trwa rozliczanie stolika.');
 }
 
-export async function activeVisit(tx: Tx, restaurantId: string, tableId: string) {
+export async function activeVisit(tx: Tx, restaurantId: string, tableId: string, expectedVisitId?: string) {
   const visit = await tx.visit.findFirst({ where: { activeTable: tableId, table: { restaurantId } }, include: { table: true } });
   if (!visit) throw new NotFoundException('Najpierw otwórz stolik.');
+  if (expectedVisitId && visit.id !== expectedVisitId) throw new ConflictException('Przy tym stoliku jest już inna wizyta. Sprawdź mapę sali.');
   return visit;
 }
 

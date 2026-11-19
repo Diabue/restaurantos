@@ -25,6 +25,7 @@ try {
       await db.$transaction(catalog.map(([name, products], position) => db.category.create({ data: {
         name, position, restaurantId: restaurant.id, products: { create: products.map(([name, description, image, price], index) => ({
           name, description, image: `/images/${image}.jpg`, price, fiscalCode: `DEMO${position + 1}${index + 1}`, vatCode: 'A',
+          station: image === 'drink' ? 'BAR' : 'KITCHEN',
           options: image === 'drink' ? [{ id: 'small', name: '300 ml', extra: 0 }, { id: 'large', name: '500 ml', extra: 500 }] : [],
           createdOrder: new Date(Date.now() + index),
         })) },

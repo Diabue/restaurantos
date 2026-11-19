@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
-import { Bell, Check, ChevronRight, Clock3, ImageOff, Minus, Plus, ShoppingBag, Trash2, Utensils } from 'lucide-react';
-import type { GuestState, Line, Menu, Product } from '../shared/model';
+import { Bell, Check, ChevronRight, Clock3, ImageOff, MessageCircle, Minus, Plus, ReceiptText, ShoppingBag, Trash2, Utensils } from 'lucide-react';
+import { callReasonLabel, callReasons, type CallReason, type GuestState, type Line, type Menu, type Product } from '../shared/model';
 import { api, ApiError, requestId, useLive, assetUrl } from './api';
 import { clock, Dialog, Feedback, Mark, message, money, Status, tableNumber } from './ui';
 
 const empty: GuestState = { cart: [], total: 0, orders: [] };
+const callIcons = { HELP: Bell, BILL: ReceiptText, ORDER: MessageCircle };
 type Intent = { action: 'add'; product: Product } | { action: 'call' } | { action: 'cart' };
 
 const guestStorage = {
@@ -33,7 +34,8 @@ const guestStorage = {
   },
 };
 
-export function Guest({ code }: { code: string }) {
+export function Guest({ code: initialCode }: { code: string }) {
+  const [code, setCode] = useState(initialCode);
   const storageKey = `restaurant:guest:${code}`;
   const [secret, setSecret] = useState(() => guestStorage.read(storageKey));
   const [menu, setMenu] = useState<Menu>();
@@ -44,6 +46,7 @@ export function Guest({ code }: { code: string }) {
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
   const [cartOpen, setCartOpen] = useState(false);
+  const [callOpen, setCallOpen] = useState(false);
   const [cartTab, setCartTab] = useState<'cart' | 'orders'>('cart');
   const [intent, setIntent] = useState<Intent>();
   const [pin, setPin] = useState('');
@@ -66,7 +69,15 @@ export function Guest({ code }: { code: string }) {
     if (menuResult.status === 'fulfilled') { setMenu(menuResult.value); setLoadError(''); }
     else setLoadError(message(menuResult.reason));
     if (guestResult.status === 'fulfilled') {
-      if (activeSecret) guestStorage.migrate(storageKey, activeSecret);
+      const currentTable = guestResult.value.table;
+      if (activeSecret && currentTable && currentTable.code !== code) {
+        guestStorage.save(`restaurant:guest:${currentTable.code}`, activeSecret);
+        guestStorage.remove(storageKey, activeSecret);
+        history.replaceState(history.state, '', `/t/${encodeURIComponent(currentTable.code)}${location.search}${location.hash}`);
+        setCode(currentTable.code);
+        setMenu(previous => previous && ({ ...previous, table: { number: currentTable.number, pinConfigured: true } }));
+        setNotice(`Obsługa przeniosła Twój rachunek na stolik ${tableNumber(currentTable.number)}.`);
+      } else if (activeSecret) guestStorage.migrate(storageKey, activeSecret);
       setGuest(guestResult.value);
     } else if (guestResult.reason instanceof ApiError && guestResult.reason.status === 401) {
       guestStorage.remove(storageKey, activeSecret);
@@ -111,15 +122,22 @@ export function Guest({ code }: { code: string }) {
 
   async function perform(next: Intent, activeSecret: string) {
     if (next.action === 'call') {
-      await api('/guest/call', { secret: activeSecret, body: {} });
-      await refresh(activeSecret);
-      setNotice('Obsługa dostała Twoje wezwanie.');
+      setCallOpen(true);
     } else if (next.action === 'cart') {
       setCartTab('cart');
       setCartOpen(true);
     } else if (next.product.options.length) {
       setOption(''); setNote(''); setProduct(next.product);
     } else await add(next.product, activeSecret);
+  }
+
+  function sendCall(reason: CallReason) {
+    void run(async () => {
+      await api('/guest/call', { secret, body: { reason } });
+      await refresh(secret);
+      setCallOpen(false);
+      setNotice('Obsługa dostała Twoje wezwanie.');
+    });
   }
 
   function start(next: Intent) {
@@ -179,7 +197,7 @@ export function Guest({ code }: { code: string }) {
   return <div className="guest-page">
     <header className="guest-header">
       <div className="header-inner"><a className="brand" href={location.pathname} aria-label="Początek menu"><Mark image={restaurant.logo} /><span>{restaurant.name}<small>MENU RESTAURACJI</small></span></a>
-        <button className="button quiet call-button" disabled={busy || !!guest.call} onClick={() => start({ action: 'call' })}><Bell size={17} />{guest.call ? 'Obsługa wezwana' : 'Wezwij obsługę'}</button></div>
+        <button className="button quiet call-button" disabled={busy} onClick={() => start({ action: 'call' })}><Bell size={17} />{guest.call ? 'Obsługa wezwana' : 'Wezwij obsługę'}</button></div>
     </header>
     <main className="guest-main">
       <section className="hero" aria-label="Restauracja">
@@ -194,7 +212,7 @@ export function Guest({ code }: { code: string }) {
       <section className="menu-section" aria-label={selected?.name || 'Menu'}>
         <div className="section-heading"><div><span className="eyebrow">MENU</span><h2>{selected?.name || 'Nasze menu'}</h2></div>
           {selected && <span className="section-count">{selected.products.length} {selected.products.length === 1 ? 'pozycja' : 'pozycje'}</span>}</div>
-        <Feedback text={!intent && !product && !cartOpen ? error : ''} />
+        <Feedback text={!intent && !product && !cartOpen && !callOpen ? error : ''} />
         {selected ? <div className="dish-list">{selected.products.map(item => <article className="dish" key={item.id}>
           <div className="dish-photo">{item.image && !failedImages.includes(item.image) ? <img key={item.image} src={assetUrl(item.image)} alt="" loading="lazy" onError={() => setFailedImages(old => [...old, item.image])} /> : <ImageOff size={24} />}</div>
           <div className="dish-copy"><h3>{item.name}</h3><p>{item.description}</p></div>
@@ -211,6 +229,16 @@ export function Guest({ code }: { code: string }) {
       <span className="cart-fab-label">Koszyk<small>{money(guest.total)}</small></span><ChevronRight size={17} />
     </button></div>
     {notice && <div className="toast" role="status"><Check size={16} />{notice}</div>}
+    {callOpen && <Dialog title={guest.call ? 'Obsługa wezwana' : 'Wezwij obsługę'} close={() => { if (!busy) setCallOpen(false); }} sheet>
+      <div className="stack">{guest.call
+        ? <p>{callReasonLabel[guest.call.reason] ?? callReasonLabel.HELP} · {clock(guest.call.createdAt)}</p>
+        : <><p>Wybierz powód, aby wysłać wezwanie do kelnera.</p>{callReasons.map(reason => {
+          const Icon = callIcons[reason];
+          return <button className="button quiet call-choice" key={reason} disabled={busy} onClick={() => sendCall(reason)}><Icon size={18} />{callReasonLabel[reason]}<ChevronRight size={16} /></button>;
+        })}</>}
+        <Feedback text={error} />
+      </div>
+    </Dialog>}
     {intent && <Dialog title={table.pinConfigured ? 'Dołącz do stolika' : 'Ustaw PIN stolika'} close={() => { if (!busy) { setIntent(undefined); setError(''); } }}>
       <form onSubmit={connect} className="stack">
         <p>{table.pinConfigured

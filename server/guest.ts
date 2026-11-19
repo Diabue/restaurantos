@@ -1,6 +1,6 @@
 import { Body, ConflictException, Controller, Get, Headers, Inject, Ip, NotFoundException, Param, Post, UnauthorizedException } from '@nestjs/common';
 import { z } from 'zod';
-import { lineTotal } from '../shared/model';
+import { callReasons, lineTotal } from '../shared/model';
 import { Live } from './live';
 import { asLines, editable, json, pricedLine, selection } from './orders';
 import { Attempts, bearer, db, digest, id, read, requireGuest, token, transact, type Tx } from './store';
@@ -72,7 +72,7 @@ export class GuestController {
       const visit = await requireGuest(tx, bearer(auth));
       const orders = await tx.order.findMany({ where: { visitId: visit.id }, orderBy: { createdAt: 'desc' } });
       const call = await tx.serviceCall.findUnique({ where: { openVisit: visit.id } });
-      return { cart: visit.cart, orders, call, total: lineTotal(asLines(visit.cart)) };
+      return { table: { code: visit.table.code, number: visit.table.number }, cart: visit.cart, orders, call, total: lineTotal(asLines(visit.cart)) };
     });
   }
 
@@ -135,10 +135,11 @@ export class GuestController {
   }
 
   @Post('guest/call')
-  async call(@Headers('authorization') auth: string) {
+  async call(@Headers('authorization') auth: string, @Body() input: unknown) {
+    const { reason } = read(z.object({ reason: z.enum(callReasons).default('HELP') }), input ?? {});
     const visit = await transact(async tx => {
       const visit = await requireGuest(tx, bearer(auth));
-      await tx.serviceCall.upsert({ where: { openVisit: visit.id }, create: { visitId: visit.id, openVisit: visit.id }, update: {} });
+      await tx.serviceCall.upsert({ where: { openVisit: visit.id }, create: { visitId: visit.id, openVisit: visit.id, reason }, update: {} });
       return visit;
     });
     this.live.publish(visit.table.restaurantId, visit.id);

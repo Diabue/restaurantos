@@ -10,6 +10,7 @@ CREATE TYPE "OrderStatus" AS ENUM ('PENDING', 'ACCEPTED', 'PREPARING', 'READY', 
 
 -- CreateEnum
 CREATE TYPE "ReceiptStatus" AS ENUM ('PREPARED', 'SENDING', 'UNKNOWN', 'ISSUED', 'FAILED');
+CREATE TYPE "PrepStation" AS ENUM ('KITCHEN', 'BAR');
 
 -- CreateTable
 CREATE TABLE "Restaurant" (
@@ -19,6 +20,7 @@ CREATE TABLE "Restaurant" (
     "tagline" TEXT NOT NULL DEFAULT '',
     "image" TEXT NOT NULL DEFAULT '',
     "logo" TEXT NOT NULL DEFAULT '',
+    "kitchenAlertMinutes" INTEGER NOT NULL DEFAULT 15,
 
     CONSTRAINT "Restaurant_pkey" PRIMARY KEY ("id")
 );
@@ -44,6 +46,7 @@ CREATE TABLE "Product" (
     "available" BOOLEAN NOT NULL DEFAULT true,
     "createdOrder" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "options" JSONB NOT NULL DEFAULT '[]',
+    "station" "PrepStation" NOT NULL DEFAULT 'KITCHEN',
     "fiscalCode" TEXT NOT NULL,
     "vatCode" TEXT NOT NULL,
 
@@ -94,6 +97,7 @@ CREATE TABLE "CartOperation" (
 
 -- CreateTable
 CREATE TABLE "Order" (
+    "acceptedAt" TIMESTAMP(3),
     "id" TEXT NOT NULL,
     "visitId" TEXT NOT NULL,
     "key" TEXT NOT NULL,
@@ -112,6 +116,7 @@ CREATE TABLE "ServiceCall" (
     "id" TEXT NOT NULL,
     "visitId" TEXT NOT NULL,
     "openVisit" TEXT,
+    "reason" TEXT NOT NULL DEFAULT 'HELP',
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "resolvedAt" TIMESTAMP(3),
 
@@ -237,6 +242,7 @@ ALTER TABLE "StaffAccess" ADD CONSTRAINT "StaffAccess_employeeId_fkey" FOREIGN K
 
 
 ALTER TABLE "Visit" ALTER COLUMN "pin" DROP NOT NULL;
+ALTER TABLE "Visit" ADD COLUMN "transfers" JSONB NOT NULL DEFAULT '[]';
 
 UPDATE "Visit" SET "pin" = NULL WHERE "activeTable" IS NULL;
 

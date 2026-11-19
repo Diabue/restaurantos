@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { lineTotal } from '../shared/model';
 import { Live } from './live';
 import { activeVisit, asLines, billLines, json } from './orders';
-import { bearer, demo, digest, note, read, requireStaff, transact, type Tx } from './store';
+import { bearer, demo, digest, id, note, read, requireStaff, transact, type Tx } from './store';
 
 async function operator(tx: Tx, auth: string) {
   const employee = await requireStaff(tx, bearer(auth), 'WAITER');
@@ -32,12 +32,12 @@ export class FiscalController {
 
   @Post('tables/:tableId/prepare')
   async prepare(@Headers('authorization') auth: string, @Headers('x-station-key') key: string, @Param('tableId') tableId: string, @Body() input: unknown) {
-    const { method } = read(z.object({ method: z.enum(['CASH', 'CARD']) }), input);
+    const { method, visitId } = read(z.object({ method: z.enum(['CASH', 'CARD']), visitId: id.optional() }), input);
     if (!demo() && !process.env.FISCAL_STATION_KEY) throw new ServiceUnavailableException('Skonfiguruj drukarkę fiskalną w lokalu.');
     const { receipt, restaurantId } = await transact(async tx => {
       const employee = await operator(tx, auth);
       station(key, employee.restaurant.slug);
-      const visit = await activeVisit(tx, employee.restaurantId, tableId);
+      const visit = await activeVisit(tx, employee.restaurantId, tableId, visitId);
       const existing = await tx.receipt.findUnique({ where: { lockedVisit: visit.id } });
       if (existing) {
         if (existing.method !== method) throw new ConflictException('Istnieje już rozliczenie z inną metodą płatności.');

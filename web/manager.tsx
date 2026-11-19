@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { ClipboardList, LayoutGrid, Plus, QrCode, Settings, Users, Utensils } from 'lucide-react';
 import QRCode from 'qrcode';
-import { roleLabel, type Category, type Employee, type Product, type Restaurant, type Table, type Visit } from '../shared/model';
+import { roleLabel, stationLabel, type Category, type Employee, type Product, type Restaurant, type Table, type TableTransfer, type Visit } from '../shared/model';
 import { requestId } from './api';
 import { ProductPhoto } from './product-photo';
 import { FloorPlan } from './floor-plan';
@@ -9,7 +9,7 @@ import type { Command } from './staff';
 import { tableMenuPath } from './table-menu';
 import { Dialog, Feedback, message, money, Status, tableNumber } from './ui';
 
-type History = Omit<Visit, 'pin'> & { table: { number: number }; openedAt: string; closedAt?: string };
+type History = Omit<Visit, 'pin'> & { table: { number: number }; openedAt: string; closedAt?: string; transfers?: TableTransfer[] };
 type Model = { restaurant: Restaurant; categories: Category[]; tables: Table[]; employees: Employee[]; history: History[] };
 type Editor = { kind: 'restaurant' } | { kind: 'category'; value?: Category } | { kind: 'product'; value?: Product } |
   { kind: 'table'; value?: Table } | { kind: 'employee'; value?: Employee } | { kind: 'qr'; value: Table };
@@ -36,7 +36,7 @@ export function Manager({ version, command }: { version: number; command: Comman
       <div className="row-actions"><button className="button primary" onClick={() => setEditor({ kind: 'category' })}><Plus size={17} /> Kategoria</button>
         <button className="button quiet" disabled={!data.categories.length} onClick={() => setEditor({ kind: 'product' })}><Plus size={17} /> Danie</button></div>
       {data.categories.map(category => <section className="panel manager-panel" key={category.id}><div className="order-head"><h2>{category.name}</h2><button className="text-button" onClick={() => setEditor({ kind: 'category', value: category })}>Edytuj kategorię</button></div>
-        {category.products.map(product => <div className="manager-row" key={product.id}><div><strong>{product.name}</strong><small>{money(product.price)} · {product.available ? 'Dostępne' : 'Ukryte w menu'}</small></div><button className="button quiet" onClick={() => setEditor({ kind: 'product', value: product })}>Edytuj</button></div>)}</section>)}
+        {category.products.map(product => <div className="manager-row" key={product.id}><div><strong>{product.name}</strong><small>{money(product.price)} · {stationLabel[product.station ?? 'KITCHEN']} · {product.available ? 'Dostępne' : 'Ukryte w menu'}</small></div><button className="button quiet" onClick={() => setEditor({ kind: 'product', value: product })}>Edytuj</button></div>)}</section>)}
     </div>}
     {data && <div hidden={page !== 'Stoliki'}><div className="stack">
       <FloorPlan tables={data.tables} command={command} editTable={value => setEditor({ kind: 'table', value })} onSaved={moves => setData(current => current && ({
@@ -55,7 +55,10 @@ export function Manager({ version, command }: { version: number; command: Comman
     </div>}
     {data && page === 'Historia' && <section className="panel manager-panel"><h2>Wizyty i rozliczenia</h2>{!data.history.length && <p className="empty-card">Brak wizyt.</p>}
       {data.history.map(visit => <details className="history-item" key={visit.id}><summary><strong>Stolik {tableNumber(visit.table.number)}</strong><span>{dateTime(visit.openedAt)} · {visit.closedAt ? 'Zamknięty' : 'Otwarty'}</span><b>{money(visit.total)}</b></summary>
-        <div className="stack">{visit.orders.map(order => <div className="order-card" key={order.id}><Status status={order.status} />{order.reason && <p>{order.reason}</p>}
+        <div className="stack">{visit.transfers?.map(move => <div className="order-card" key={move.request}>
+          <strong>Przeniesienie ze stolika {tableNumber(move.fromNumber)} na {tableNumber(move.toNumber)}</strong>
+          <p>{dateTime(move.at)} · {move.employeeName}</p></div>)}
+          {visit.orders.map(order => <div className="order-card" key={order.id}><Status status={order.status} />{order.reason && <p>{order.reason}</p>}
           {order.lines.map(line => <div className="order-line" key={line.key}><span>{line.quantity} × {line.name}{line.canceled && ` · Anulowano: ${line.canceled}`}</span></div>)}</div>)}
           {visit.receipts.map(receipt => <div className="order-card" key={receipt.id}><strong>Rozliczenie · {money(receipt.total)} · {receipt.method === 'CARD' ? 'Karta' : 'Gotówka'}</strong>
             <p>{({ PREPARED: 'Przygotowane', SENDING: 'Wysyłanie lub nieznany wynik', UNKNOWN: 'Wymaga weryfikacji', ISSUED: 'Wydano paragon', FAILED: 'Wydruk nieudany' })[receipt.status]}{receipt.reference && ` · ${receipt.reference}`}</p>
@@ -111,8 +114,9 @@ function Edit({ editor, data, command, close }: { editor: Exclude<Editor, { kind
   if (editor.kind === 'restaurant') {
     title = 'Dane lokalu';
     const value = data.restaurant;
-    fields = <><Field name="name" label="Nazwa" value={value.name} required /><Field name="tagline" label="Krótki opis" value={value.tagline} /><Field name="image" label="Adres zdjęcia w tle" value={value.image} /><Field name="logo" label="Adres logo" value={value.logo} /></>;
-    encode = form => Object.fromEntries(form);
+    fields = <><Field name="name" label="Nazwa" value={value.name} required /><Field name="tagline" label="Krótki opis" value={value.tagline} /><Field name="image" label="Adres zdjęcia w tle" value={value.image} /><Field name="logo" label="Adres logo" value={value.logo} />
+      <label>Alarm po czasie oczekiwania (min)<input name="kitchenAlertMinutes" type="number" min={1} max={240} defaultValue={value.kitchenAlertMinutes ?? 15} required /></label></>;
+    encode = form => ({ ...Object.fromEntries(form), kitchenAlertMinutes: Number(form.get('kitchenAlertMinutes')) });
   } else if (editor.kind === 'category') {
     title = 'Kategoria menu';
     fields = <><Field name="name" label="Nazwa" value={editor.value?.name} required /><Field name="position" label="Kolejność" type="number" value={editor.value?.position ?? data.categories.length} required /></>;
@@ -121,6 +125,8 @@ function Edit({ editor, data, command, close }: { editor: Exclude<Editor, { kind
     title = 'Danie';
     const value = editor.value;
     fields = <><Field name="name" label="Nazwa" value={value?.name} required /><label>Kategoria<select name="categoryId" defaultValue={value?.categoryId} required>{data.categories.map(category => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
+      <label>Stanowisko przygotowania<select name="station" defaultValue={value?.station ?? 'KITCHEN'}>
+        {Object.entries(stationLabel).map(([station, label]) => <option key={station} value={station}>{label}</option>)}</select></label>
       <Field name="description" label="Opis" value={value?.description} /><ProductPhoto image={value?.image} />
       <div className="form-grid"><Field name="price" label="Cena (zł)" type="number" value={value ? value.price / 100 : undefined} step="0.01" required /><Field name="fiscalCode" label="Kod fiskalny" value={value?.fiscalCode} required />
         <label>Grupa VAT drukarki<select name="vatCode" defaultValue={value?.vatCode} required>{'ABCDEFG'.split('').map(code => <option key={code}>{code}</option>)}</select></label></div>

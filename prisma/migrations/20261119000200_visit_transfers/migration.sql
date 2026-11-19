@@ -1,0 +1,1 @@
+ALTER TABLE "Visit" ADD COLUMN "transfers" JSONB NOT NULL DEFAULT '[]';

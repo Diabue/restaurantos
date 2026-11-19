@@ -9,6 +9,7 @@ import { bearer, db, id, note, options, passwordHash, read, requireStaff, roles,
 const imageAddress = (value: string) => !value || /^https:\/\/[^\s]+$/i.test(value) || /^\/images\/[a-z0-9._-]+$/i.test(value);
 const image = z.string().trim().max(1000).refine(imageAddress, 'Podaj adres HTTPS lub ścieżkę /images/.');
 const product = z.object({ id: id.optional(), categoryId: id, name: title, description: note,
+  station: z.enum(['KITCHEN', 'BAR']).optional(),
   image: z.string().trim().max(1000).refine(value => imageAddress(value) || productImagePath.test(value), 'Wybierz zdjęcie lub podaj poprawny adres HTTPS.'),
   price: z.number().int().min(1).max(1000000), available: z.boolean(), options, fiscalCode: title, vatCode: z.string().trim().regex(/^[A-G]$/),
 });
@@ -36,7 +37,7 @@ export class ManagerController {
 
   @Post('restaurant')
   async restaurant(@Headers('authorization') auth: string, @Body() input: unknown) {
-    const data = read(z.object({ name: title, tagline: note, image, logo: image }), input);
+    const data = read(z.object({ name: title, tagline: note, image, logo: image, kitchenAlertMinutes: z.number().int().min(1).max(240).optional() }), input);
     const result = await transact(async tx => {
       const { restaurantId } = await requireStaff(tx, bearer(auth), 'MANAGER');
       return tx.restaurant.update({ where: { id: restaurantId }, data });

@@ -43,7 +43,7 @@ export async function handleEdge(req: Request): Promise<Response> {
     else if (!post && path === '/guest') result = await guest.state(auth);
     else if (post && path === '/guest/cart') result = await guest.cart(auth,body);
     else if (post && path === '/guest/order') result = await guest.submit(auth,body);
-    else if (post && path === '/guest/call') result = await guest.call(auth);
+    else if (post && path === '/guest/call') result = await guest.call(auth,body);
     else if (post && path === '/staff/login') {
       const key='login:'+ip;
       await db.$executeRaw`INSERT INTO restaurantos."AccessAttempt" (key,count,expires) VALUES (${key},1,now()+interval '5 minutes') ON CONFLICT (key) DO UPDATE SET count=CASE WHEN "AccessAttempt".expires<now() THEN 1 ELSE "AccessAttempt".count+1 END, expires=CASE WHEN "AccessAttempt".expires<now() THEN now()+interval '5 minutes' ELSE "AccessAttempt".expires END`;
@@ -56,8 +56,9 @@ export async function handleEdge(req: Request): Promise<Response> {
     else if (!post && path === '/staff/floor') result = await staff.floor(auth);
     else if (!post && path === '/staff/kitchen') result = await staff.kitchen(auth);
     else if (post && (m=path.match(/^\/staff\/tables\/([^/]+)\/(open|close-empty|manual|discard-cart)$/))) {
-      result = m[2]==='open' ? await staff.open(auth,m[1]) : m[2]==='close-empty' ? await staff.closeEmpty(auth,m[1]) : m[2]==='manual' ? await staff.manual(auth,m[1],body) : await staff.discardCart(auth,m[1],body);
+      result = m[2]==='open' ? await staff.open(auth,m[1]) : m[2]==='close-empty' ? await staff.closeEmpty(auth,m[1],body) : m[2]==='manual' ? await staff.manual(auth,m[1],body) : await staff.discardCart(auth,m[1],body);
     }
+    else if(post && (m=path.match(/^\/staff\/tables\/([^/]+)\/transfer$/))) result=await staff.transfer(auth,m[1],body);
     else if(post && (m=path.match(/^\/staff\/orders\/([^/]+)$/))) result=await staff.updateOrder(auth,m[1],body);
     else if(post && (m=path.match(/^\/staff\/calls\/([^/]+)\/resolve$/))) result=await staff.resolveCall(auth,m[1]);
     else if(!post && path==='/manager') result=await manager.state(auth);

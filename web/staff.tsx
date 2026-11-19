@@ -1,12 +1,17 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { Bell, Check, ChefHat, ClipboardList, CreditCard, DoorOpen, LayoutGrid, LogOut, Plus, ReceiptText, Settings, Users } from 'lucide-react';
-import { roleLabel, type Category, type Employee, type Line, type Order, type Receipt, type Role, type Table } from '../shared/model';
+import { Bell, Check, ChefHat, CreditCard, DoorOpen, LayoutGrid, LogOut, Plus, ReceiptText, Settings } from 'lucide-react';
+import { callReasonLabel, roleLabel, type Category, type Employee, type Line, type Order, type Receipt, type Role, type Table } from '../shared/model';
 import { api, ApiError, requestId, useLive } from './api';
 import { Manager } from './manager';
+import { KitchenBoard } from './kitchen-board';
+import type { Ticket } from '../shared/kitchen';
+import { TransferVisit } from './transfer-visit';
+import { FloorOverview } from './floor-overview';
+import { Manual } from './manual-order';
+import { useNow, elapsedLabel } from './service-alerts';
 import { clock, Dialog, Feedback, Mark, message, money, Status, tableNumber } from './ui';
 
 type StaffIdentity = Pick<Employee, 'id' | 'name' | 'roles' | 'canFiscalize'> & { restaurant: { name: string; slug: string }; demo: boolean };
-type KitchenOrder = Omit<Order, 'lines'> & { table: number; lines: Pick<Line, 'key' | 'name' | 'option' | 'quantity' | 'canceled' | 'note'>[] };
 type FloorState = { tables: Table[]; categories: Category[] };
 export type Command = <T = unknown>(path: string, body?: unknown, station?: string) => Promise<T>;
 const roleIcons = { WAITER: LayoutGrid, KITCHEN: ChefHat, MANAGER: Settings };
@@ -82,8 +87,8 @@ export function StaffApp() {
   return <div className="staff-page"><header className="staff-header"><div className="brand"><Mark /><span>{identity.restaurant.name}<small>RESTAURANTOS</small></span></div>
     <nav className="staff-nav" aria-label="Tryby aplikacji">{(pinned ? [pinned] : identity.roles).map(role => { const Icon = roleIcons[role]; return <button key={role} className={mode === role ? 'selected' : ''} aria-pressed={mode === role} onClick={() => setMode(role)}><Icon size={17} />{roleLabel[role]}</button>; })}</nav>
     <div className="staff-account"><span className={`connection ${online ? 'online' : ''}`}><i />{online ? 'Na żywo' : 'Łączenie'}</span><span className="staff-name">{identity.name}</span><button className="icon-button" aria-label="Wyloguj się" onClick={() => void logout()}><LogOut size={19} /></button></div></header>
-    <main className="staff-main"><Feedback text={error} />{mode === 'WAITER' && <Floor version={version} command={command} canFiscalize={identity.canFiscalize} demo={identity.demo} />}
-      {mode === 'KITCHEN' && <Kitchen version={version} command={command} />}
+    <main className="staff-main"><Feedback text={error} />{mode === 'WAITER' && <Floor scope={identity.restaurant.slug} version={version} command={command} canFiscalize={identity.canFiscalize} demo={identity.demo} />}
+      {mode === 'KITCHEN' && <Kitchen key={identity.restaurant.slug} venue={identity.restaurant.slug} version={version} command={command} />}
       {mode === 'MANAGER' && <Manager version={version} command={command} />}
     </main></div>;
 }
@@ -116,60 +121,50 @@ function heading(eyebrow: string, title: string, description: string) {
   return <div className="staff-title"><span className="eyebrow">{eyebrow}</span><h1>{title}</h1><p>{description}</p></div>;
 }
 
-function tableState(table: Table) {
-  if (table.visit?.calls.some(call => !call.resolvedAt)) return ['call', 'Wezwanie'];
-  if (table.visit?.orders.some(order => order.status === 'PENDING')) return ['pending', 'Do akceptacji'];
-  if (table.visit?.orders.some(order => order.status === 'READY')) return ['ready', 'Do podania'];
-  return table.visit ? ['active', 'Zajęty'] : ['free', 'Wolny'];
-}
-
-function Floor({ command, version, canFiscalize, demo }: { command: Command; version: number; canFiscalize: boolean; demo: boolean }) {
+function Floor({ command, version, canFiscalize, demo, scope }: { command: Command; version: number; canFiscalize: boolean; demo: boolean; scope: string }) {
   const { data, error } = useStaffData<FloorState>(command, '/staff/floor', version);
   const [selected, setSelected] = useState('');
   const table = data?.tables.find(table => table.id === selected);
   const tables = data?.tables ?? [];
   return <>{heading('TRYB KELNER', 'Mapa sali', 'Wybierz stolik, aby zobaczyć zamówienia, wezwania i rachunek.')}
-    <Feedback text={error} /><div className="floor-stats">
-      <div className="panel metric"><Users size={19} /><span>Otwarte stoliki</span><strong>{tables.filter(table => table.visit).length} / {tables.length}</strong></div>
-      <div className="panel metric"><ClipboardList size={19} /><span>Do akceptacji</span><strong>{tables.reduce((count, table) => count + (table.visit?.orders.filter(order => order.status === 'PENDING').length ?? 0), 0)}</strong></div>
-      <div className="panel metric"><Bell size={19} /><span>Wezwania</span><strong>{tables.filter(table => table.visit?.calls.some(call => !call.resolvedAt)).length}</strong></div>
-    </div>
-    <section className="panel floor-panel"><div className="section-heading"><div><h2>Sala główna</h2><p>{tables.length} stolików</p></div><span className="section-count">UKŁAD LOKALU</span></div>
-      {tables.length ? <div className="floor-map" aria-label="Rozmieszczenie stolików">{tables.map(table => { const [color, label] = tableState(table); return <button className={`table-tile table-${color}`} key={table.id} style={{ left: `${table.x}%`, top: `${table.y}%` }} onClick={() => setSelected(table.id)}>
-        <strong>{tableNumber(table.number)}</strong><small>{label}</small><span className="table-signals" aria-hidden="true">{table.visit?.calls.some(call => !call.resolvedAt) && <Bell size={13} />}{table.visit?.orders.some(order => order.status === 'PENDING') && <ClipboardList size={13} />}{table.visit?.orders.some(order => order.status === 'READY') && <Check size={13} />}</span>
-      </button>; })}</div> : <p className="empty-card">{data ? 'Manager może dodać pierwszy stolik.' : 'Ładowanie sali…'}</p>}
-    </section>
-    {table && <TableDetails key={table.id} table={table} categories={data?.categories ?? []} command={command} demo={demo} canFiscalize={canFiscalize} close={() => setSelected('')} />}
+    <Feedback text={error} /><FloorOverview tables={data?.tables} scope={scope} onSelect={setSelected} />
+    {table && <TableDetails key={`${table.id}:${table.visit?.id ?? ''}`} table={table} tables={tables} categories={data?.categories ?? []} command={command} demo={demo} canFiscalize={canFiscalize} selectTable={setSelected} close={() => setSelected('')} />}
   </>;
 }
 
-function TableDetails({ table, categories, command, demo, canFiscalize, close }: { table: Table; categories: Category[]; command: Command; demo: boolean; canFiscalize: boolean; close: () => void }) {
+function TableDetails({ table, tables, categories, command, demo, canFiscalize, close, selectTable }: { table: Table; tables: Table[]; categories: Category[]; command: Command; demo: boolean; canFiscalize: boolean; close: () => void; selectTable: (id: string) => void }) {
   const { busy, error, run } = useAction();
   const [manual, setManual] = useState(false);
   const [reason, setReason] = useState<{ id: string; key?: string }>();
+  const [correction, setCorrection] = useState<{ orderId: string; line: Line }>();
   const [checkout, setCheckout] = useState(false);
   const [discard, setDiscard] = useState<{ visitId: string; snapshot: Pick<Line, 'key' | 'quantity' | 'price'>[] }>();
   const visit = table.visit;
   const receipt = visit?.receipts.find(receipt => receipt.status !== 'FAILED');
-  const send = (path: string, body: unknown = {}) => command(`/staff${path}`, body);
+  const send = (path: string, body: unknown = {}) => command(`/staff${path}`, path.startsWith('/tables/') && visit ? { visitId: visit.id, ...(body as object) } : body);
   const call = visit?.calls.find(call => !call.resolvedAt);
+  const now = useNow();
 
   return <Dialog title={`Stolik ${tableNumber(table.number)}`} close={close}>
     <Feedback text={error} />
     {!visit ? <div className="stack"><p>Goście mogą sami rozpocząć wizytę przez kod QR. Otwórz stolik tutaj, jeśli przyjmujesz zamówienie ustnie.</p><button className="button primary" disabled={busy} onClick={() => void run(() => send(`/tables/${table.id}/open`))}><DoorOpen size={18} /> Otwórz stolik</button></div> : <div className="stack">
       <div className="table-session"><div><span className="eyebrow">PIN GOŚCI</span><strong>{visit.pin ? `${visit.pin.slice(0, 3)} ${visit.pin.slice(3)}` : 'Jeszcze nieustawiony'}</strong></div><div><span className="eyebrow">DO ROZLICZENIA</span><strong>{money(visit.total)}</strong></div></div>
-      {call && <div className="notice-row"><Bell size={20} /><span>Gość wzywa obsługę · {clock(call.createdAt)}</span><button className="button quiet" disabled={busy} onClick={() => void run(() => send(`/calls/${call.id}/resolve`))}>Obsłużone</button></div>}
+      {call && <div className="notice-row"><Bell size={20} /><span>{callReasonLabel[call.reason] ?? callReasonLabel.HELP} · {clock(call.createdAt)} · czeka {elapsedLabel(call.createdAt, now)}</span><button className="button quiet" disabled={busy} onClick={() => void run(() => send(`/calls/${call.id}/resolve`))}>Obsłużone</button></div>}
       <div className="row-actions"><button className="button primary" disabled={!!receipt} onClick={() => setManual(true)}><Plus size={17} /> Dodaj zamówienie</button>
         {canFiscalize && <button className="button quiet" onClick={() => setCheckout(true)}><ReceiptText size={17} /> Rozlicz stolik</button>}
+        {!receipt && <TransferVisit table={table} visitId={visit.id} tables={tables} command={command} selectTable={selectTable} />}
         {!visit.cart.length && visit.orders.every(order => ['REJECTED', 'CANCELED'].includes(order.status)) && !receipt && <button className="button quiet" disabled={busy} onClick={() => void run(() => send(`/tables/${table.id}/close-empty`))}>Zamknij pusty stolik</button>}</div>
       {!!visit.cart.length && <div className="order-line"><span>W koszyku gości: {visit.cart.reduce((sum, line) => sum + line.quantity, 0)} szt. przed wysłaniem.</span>
         {!receipt && <button className="text-button" onClick={() => setDiscard({ visitId: visit.id, snapshot: visit.cart.map(({ key, quantity, price }) => ({ key, quantity, price })) })}>Opróżnij koszyk</button>}</div>}
       {visit.orders.length ? [...visit.orders].reverse().map(order => <article className="order-card" key={order.id}>
-        <div className="order-head"><Status status={order.status} /><small>{order.source === 'QR' ? 'Telefon' : 'Kelner'} · {clock(order.createdAt)}</small></div>
+        <div className="order-head"><Status status={order.status} /><small>{order.source === 'QR' ? 'Telefon' : 'Kelner'} · {clock(order.createdAt)}{order.status === 'PENDING' && ' · czeka ' + elapsedLabel(order.createdAt, now)}</small></div>
         {order.reason && <Feedback text={order.reason} />}
         {order.lines.map(line => <div className={`order-line ${line.canceled ? 'canceled' : ''}`} key={line.key}>
-          <div><strong>{line.quantity} × {line.name}</strong><small>{[line.option, line.note, line.canceled && `Anulowano: ${line.canceled}`].filter(Boolean).join(' · ')}</small></div>
-          <div className="line-actions"><b>{money(line.price * line.quantity)}</b>{!line.canceled && !receipt && ['ACCEPTED', 'PREPARING', 'READY', 'SERVED'].includes(order.status) && <button className="text-button" onClick={() => setReason({ id: order.id, key: line.key })}>Anuluj pozycję</button>}</div>
+          <div><strong>{line.quantity} × {line.name}</strong><small>{line.readyAt && !line.canceled && ['ACCEPTED', 'PREPARING', 'READY'].includes(order.status) && <b className="ready-line-label">Do podania · </b>}{[line.option, line.note, line.canceled && `Anulowano: ${line.canceled}`].filter(Boolean).join(' · ')}</small></div>
+          <div className="line-actions"><b>{money(line.price * line.quantity)}</b>
+            {!receipt && !line.canceled && !line.readyAt && ['ACCEPTED', 'PREPARING'].includes(order.status) &&
+              <button className="text-button" onClick={() => setCorrection({ orderId: order.id, line })}>Zmień pozycję</button>}
+            {!line.canceled && !receipt && ['ACCEPTED', 'PREPARING', 'READY', 'SERVED'].includes(order.status) && <button className="text-button" onClick={() => setReason({ id: order.id, key: line.key })}>Anuluj pozycję</button>}</div>
         </div>)}
         {order.status === 'PENDING' && <div className="row-actions"><button className="button primary" disabled={busy} onClick={() => void run(() => send(`/orders/${order.id}`, { action: 'ACCEPT' }))}><Check size={17} /> Akceptuj</button><button className="button quiet" onClick={() => setReason({ id: order.id })}>Odrzuć</button></div>}
         {order.status === 'READY' && <button className="button quiet" disabled={busy} onClick={() => void run(() => send(`/orders/${order.id}`, { action: 'SERVE' }))}>Oznacz jako podane</button>}
@@ -177,11 +172,33 @@ function TableDetails({ table, categories, command, demo, canFiscalize, close }:
     </div>}
     {manual && <Manual categories={categories} close={() => setManual(false)} submit={body => send(`/tables/${table.id}/manual`, body)} />}
     {reason && <Reason title={reason.key === undefined ? 'Odrzuć zamówienie' : 'Anuluj pozycję'} close={() => setReason(undefined)} submit={text => send(`/orders/${reason.id}`, { action: reason.key === undefined ? 'REJECT' : 'CANCEL_LINE', key: reason.key, reason: text })} />}
+    {correction && <LineCorrection line={correction.line} close={() => setCorrection(undefined)} submit={body => send(`/orders/${correction.orderId}`, body)} />}
     {checkout && visit && <Checkout table={table} receipt={receipt} command={command} demo={demo} close={() => setCheckout(false)} />}
     {discard && <Dialog title="Opróżnić koszyk gości?" close={() => setDiscard(undefined)}><div className="stack">
       <p>Usuniesz pozycje, których goście jeszcze nie wysłali do obsługi.</p><Feedback text={error} />
       <button className="button primary" disabled={busy} onClick={() => void run(async () => { await send(`/tables/${table.id}/discard-cart`, discard); setDiscard(undefined); })}>Opróżnij koszyk</button>
     </div></Dialog>}
+  </Dialog>;
+}
+
+function LineCorrection({ line, close, submit }: { line: Line; close: () => void; submit: (body: unknown) => Promise<unknown> }) {
+  const { busy, error, run } = useAction();
+  const request = useRef(requestId());
+  return <Dialog title={`Zmień pozycję · ${line.name}`} close={() => { if (!busy) close(); }}>
+    <form className="stack" onChange={() => { request.current = requestId(); }} onSubmit={event => {
+      event.preventDefault();
+      const form = new FormData(event.currentTarget);
+      void run(async () => {
+        await submit({ action: 'CHANGE_LINE', key: line.key, request: request.current, previousQuantity: line.quantity, previousNote: line.note,
+          quantity: Number(form.get('quantity')), note: form.get('note'), reason: form.get('reason') });
+        close();
+      });
+    }}>
+      <label>Ilość<input type="number" name="quantity" defaultValue={line.quantity} min={1} max={99} required /></label>
+      <label>Uwagi dla stanowiska<input name="note" defaultValue={line.note} maxLength={300} /></label>
+      <label>Powód zmiany<textarea name="reason" maxLength={300} required /></label>
+      <Feedback text={error} /><button className="button primary" disabled={busy}>Zapisz zmianę</button>
+    </form>
   </Dialog>;
 }
 
@@ -191,36 +208,12 @@ function Reason({ title, close, submit }: { title: string; close: () => void; su
     <label>Powód<textarea name="reason" autoFocus required maxLength={300} /></label><Feedback text={error} /><button className="button primary" disabled={busy}>Potwierdź</button></form></Dialog>;
 }
 
-type Draft = { productId: string; optionId?: string; quantity: number; note: string };
-function Manual({ categories, close, submit }: { categories: Category[]; close: () => void; submit: (value: unknown) => Promise<unknown> }) {
-  const { busy, error, run } = useAction();
-  const [draft, setDraft] = useState<Draft[]>([]);
-  const [productId, setProductId] = useState('');
-  const [optionId, setOptionId] = useState('');
-  const products = categories.flatMap(category => category.products);
-  const product = products.find(product => product.id === productId);
-  const request = useRef(requestId());
-  return <Dialog title="Zamówienie od kelnera" close={close}><div className="stack">
-    <form className="stack" onSubmit={event => {
-      event.preventDefault(); if (!product) return;
-      const form = new FormData(event.currentTarget);
-      setDraft(old => [...old, { productId, optionId: optionId || undefined, quantity: Number(form.get('quantity')), note: String(form.get('note')) }]);
-      event.currentTarget.reset(); setProductId(''); setOptionId(''); request.current = requestId();
-    }}><label>Danie<select value={productId} onChange={event => { setProductId(event.target.value); setOptionId(''); }} required><option value="">Wybierz danie</option>{categories.map(category => <optgroup label={category.name} key={category.id}>{category.products.map(product => <option value={product.id} key={product.id}>{product.name} · {money(product.price)}</option>)}</optgroup>)}</select></label>
-      {!!product?.options.length && <label>Opcja<select required value={optionId} onChange={event => setOptionId(event.target.value)}><option value="">Wybierz opcję</option>{product.options.map(option => <option key={option.id} value={option.id}>{option.name}</option>)}</select></label>}
-      <div className="form-grid"><label>Ilość<input name="quantity" type="number" min={1} max={99} defaultValue={1} required /></label><label>Uwagi<input name="note" maxLength={300} /></label></div>
-      <button className="button quiet" disabled={busy || !product}><Plus size={17} /> Dopisz do zamówienia</button></form>
-    {draft.map((item, index) => <div className="order-line" key={index}><strong>{item.quantity} × {products.find(product => product.id === item.productId)?.name}</strong><button className="text-button" disabled={busy} onClick={() => { setDraft(old => old.filter((_, i) => i !== index)); request.current = requestId(); }}>Usuń</button></div>)}
-    <Feedback text={error} /><button className="button primary" disabled={busy || !draft.length} onClick={() => void run(async () => { await submit({ items: draft, request: request.current }); close(); })}>Wyślij do kuchni</button>
-  </div></Dialog>;
-}
-
 function Checkout({ table, receipt, command, demo, close }: { table: Table; receipt?: Receipt; command: Command; demo: boolean; close: () => void }) {
   const { busy, error, run } = useAction();
   const [method, setMethod] = useState<'CASH' | 'CARD'>('CASH');
   const station = 'local-demo';
   async function print() {
-    const prepared = await command<Receipt>(`/fiscal/tables/${table.id}/prepare`, { method }, station);
+    const prepared = await command<Receipt>(`/fiscal/tables/${table.id}/prepare`, { method, visitId: table.visit?.id }, station);
     if (prepared.status !== 'PREPARED') return;
     await command(`/fiscal/${prepared.id}/claim`, {}, station);
     await command(`/fiscal/${prepared.id}/result`, { status: 'ISSUED', reference: `DEMO-${prepared.id.slice(0, 8).toUpperCase()}` }, station);
@@ -238,21 +231,11 @@ function Checkout({ table, receipt, command, demo, close }: { table: Table; rece
   </div></Dialog>;
 }
 
-function Kitchen({ version, command }: { version: number; command: Command }) {
-  const { data, error: loadError } = useStaffData<KitchenOrder[]>(command, '/staff/kitchen', version);
+function Kitchen({ version, command, venue }: { version: number; command: Command; venue: string }) {
+  const { data, error: loadError } = useStaffData<Ticket[]>(command, '/staff/kitchen', version);
   const { busy, error, run } = useAction();
-  const columns = [
-    { name: 'Nowe bony', states: ['ACCEPTED'] }, { name: 'W przygotowaniu', states: ['PREPARING'] }, { name: 'Gotowe i zmiany', states: ['READY', 'SERVED', 'CANCELED'] },
-  ];
   return <>{heading('TRYB KUCHNIA', 'Kolejka zamówień', 'Przyjęte zamówienia z sali i telefonów gości.')}
-    <Feedback text={loadError || error} /><div className="kitchen-columns">{columns.map(column => {
-      const orders = (data ?? []).filter(order => column.states.includes(order.status));
-      return <section className="kitchen-column" key={column.name}><h2>{column.name}<span className="section-count">{orders.length}</span></h2>
-        {orders.length ? orders.map(order => <article className="panel ticket" key={order.id}><div className="order-head"><strong>Stolik {tableNumber(order.table)}</strong><small>{clock(order.createdAt)}</small></div>
-          <Status status={order.status} />{order.lines.map(line => <div className={`order-line ${line.canceled ? 'canceled' : ''}`} key={line.key}><div><strong>{line.quantity} × {line.name}</strong><small>{[line.option, line.note].filter(Boolean).join(' · ')}</small>{line.canceled && <small>Anulowano: {line.canceled}</small>}</div></div>)}
-          {['ACCEPTED', 'PREPARING'].includes(order.status) && <button className="button primary" disabled={busy} onClick={() => void run(() => command(`/staff/orders/${order.id}`, { action: order.status === 'ACCEPTED' ? 'PREPARE' : 'READY' }))}>
-            {order.status === 'ACCEPTED' ? 'Rozpocznij przygotowanie' : 'Oznacz jako gotowe'}</button>}
-        </article>) : <p className="empty-card">{data ? 'Brak bonów' : 'Ładowanie…'}</p>}
-      </section>;
-    })}</div></>;
+    <Feedback text={loadError || error} />
+    <KitchenBoard data={data} venue={venue} busy={busy} send={(id, action) => void run(() => command(`/staff/orders/${id}`, action))} />
+  </>;
 }
