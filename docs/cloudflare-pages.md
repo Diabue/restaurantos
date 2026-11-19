@@ -1,5 +1,11 @@
 # Wdrożenie RestaurantOS
 
+## Automatyczne sprawdzanie bazy
+
+GitHub Actions uruchamia `scripts/keepalive.mjs` trzy razy dziennie: 02:17, 10:17 i 18:17 UTC. Workflow można uruchomić ręcznie w Actions → Supabase database health. Wywołuje istniejący endpoint `/api/health`, który wykonuje `SELECT 1` w bazie. Nie wymaga sekretów GitHuba i nie tworzy danych testowych. Błędy kończą workflow niepowodzeniem i są widoczne w Actions.
+
+Supabase Free może wstrzymywać projekty po 7 dniach niskiej aktywności. Regularne odczyty nie gwarantują braku pauzy. Harmonogram GitHuba może być opóźniony. Wstrzymany projekt trzeba przywrócić w panelu Supabase; ten skrypt go sam nie przywraca. [Zasady Supabase](https://supabase.com/docs/guides/platform/free-project-pausing).
+
 Frontend i Android pozostają w repozytorium `Diabue/restaurantos`. Frontend jest publikowany automatycznie z gałęzi `main` na Cloudflare Pages.
 
 - Adres: https://restaurantos.maxstronytest.uk — instrukcja zeskanowania kodu; bez publicznego wyboru stolika.
