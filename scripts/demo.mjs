@@ -52,7 +52,7 @@ try {
     run(tsx, '--test', 'tests/flow.test.ts');
   } else {
     run(resolve('node_modules/vite/bin/vite.js'), 'build');
-    console.log(`Wybór stolika http://localhost:${env.PORT || 3001}/ · Obsługa http://localhost:${env.PORT || 3001}/staff?venue=oliwa`);
+    console.log(`Strona gościa http://localhost:${env.PORT || 3001}/ · Obsługa http://localhost:${env.PORT || 3001}/staff?venue=oliwa`);
     server = spawn(process.execPath, [tsx, 'server/main.ts'], { env, stdio: 'inherit' });
     const status = await new Promise(resolve => server.once('exit', resolve));
     if (status) process.exitCode = status;
