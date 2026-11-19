@@ -62,6 +62,7 @@ export async function handleEdge(req: Request): Promise<Response> {
     else if(post && (m=path.match(/^\/staff\/orders\/([^/]+)$/))) result=await staff.updateOrder(auth,m[1],body);
     else if(post && (m=path.match(/^\/staff\/calls\/([^/]+)\/resolve$/))) result=await staff.resolveCall(auth,m[1]);
     else if(!post && path==='/manager') result=await manager.state(auth);
+    else if(!post && (m=path.match(/^\/manager\/sales\/([^/]+)$/))) result=await manager.sales(auth,m[1]);
     else if(post && path==='/manager/product') {
       let photo: {buffer:Buffer} | undefined;
       if(req.headers.get('content-type')?.startsWith('multipart/')) {

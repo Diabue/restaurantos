@@ -199,3 +199,12 @@ legend { font-weight: 800; font-size: .86rem; }
   .brand { font-size: .87rem; }
   .brand .mark { width: 36px; height: 36px; }
 }
+.guest-order-link { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; margin-top: 14px; border: 1px solid var(--line); border-radius: 14px; background: #fff; text-align: left; }
+.guest-order-link span, .sales-metrics > div { display: grid; gap: 4px; }
+.guest-order-link small, .sales-metrics small { color: var(--muted); }
+.sales-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); gap: 10px; }
+.sales-metrics > div { padding: 14px; border-radius: 12px; background: var(--soft); }
+.sales-metrics strong { font-size: 1.35rem; }
+.sales-table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.sales-table td, .sales-table th { padding: 10px 4px; border-bottom: 1px solid var(--line); text-align: right; }
+.sales-table :is(td, th):first-child { text-align: left; overflow-wrap: anywhere; }

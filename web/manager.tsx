@@ -5,6 +5,7 @@ import { roleLabel, stationLabel, type Category, type Employee, type Product, ty
 import { requestId } from './api';
 import { ProductPhoto } from './product-photo';
 import { FloorPlan } from './floor-plan';
+import { SalesReport } from './sales-report';
 import type { Command } from './staff';
 import { tableMenuPath } from './table-menu';
 import { Dialog, Feedback, message, money, Status, tableNumber } from './ui';
@@ -13,7 +14,7 @@ type History = Omit<Visit, 'pin'> & { table: { number: number }; openedAt: strin
 type Model = { restaurant: Restaurant; categories: Category[]; tables: Table[]; employees: Employee[]; history: History[] };
 type Editor = { kind: 'restaurant' } | { kind: 'category'; value?: Category } | { kind: 'product'; value?: Product } |
   { kind: 'table'; value?: Table } | { kind: 'employee'; value?: Employee } | { kind: 'qr'; value: Table };
-const pages = [{ label: 'Menu', icon: Utensils }, { label: 'Stoliki', icon: LayoutGrid }, { label: 'Personel', icon: Users }, { label: 'Historia', icon: ClipboardList }, { label: 'Lokal', icon: Settings }];
+const pages = [{ label: 'Menu', icon: Utensils }, { label: 'Raport dnia', icon: ClipboardList }, { label: 'Stoliki', icon: LayoutGrid }, { label: 'Personel', icon: Users }, { label: 'Historia', icon: ClipboardList }, { label: 'Lokal', icon: Settings }];
 const dateTime = (value: string) => new Date(value).toLocaleString('pl-PL', { dateStyle: 'short', timeStyle: 'short' });
 
 export function Manager({ version, command }: { version: number; command: Command }) {
@@ -32,6 +33,7 @@ export function Manager({ version, command }: { version: number; command: Comman
   return <><div className="staff-title"><span className="eyebrow">TRYB MANAGER</span><h1>Zarządzanie lokalem</h1><p>Skonfiguruj menu, salę i dostęp do aplikacji.</p></div>
     <div className="segmented manager-tabs">{pages.map(({ label, icon: Icon }) => <button className={page === label ? 'selected' : ''} key={label} onClick={() => setPage(label)}><Icon size={16} />{label}</button>)}</div>
     <Feedback text={error} />{!data && <p className="empty-card">Ładowanie konfiguracji…</p>}
+    {page === 'Raport dnia' && <SalesReport command={command} version={version} />}
     {data && page === 'Menu' && <div className="stack">
       <div className="row-actions"><button className="button primary" onClick={() => setEditor({ kind: 'category' })}><Plus size={17} /> Kategoria</button>
         <button className="button quiet" disabled={!data.categories.length} onClick={() => setEditor({ kind: 'product' })}><Plus size={17} /> Danie</button></div>

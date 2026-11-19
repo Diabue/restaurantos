@@ -1,8 +1,9 @@
-import { BadRequestException, Body, ConflictException, Controller, Get, Headers, Inject, NotFoundException, Post, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+import { BadRequestException, Body, ConflictException, Controller, Get, Headers, Inject, NotFoundException, Param, Post, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { z } from 'zod';
 import { Live } from './live';
-import { withTotal } from './orders';
+import { asLines, withTotal } from './orders';
+import { salesTimeZone, type DailySales } from '../shared/sales-report';
 import { productData, ProductImageGuard, productImageMaxBytes, productImagePath, storeProductImage } from './product-images';
 import { bearer, db, id, note, options, passwordHash, read, requireStaff, roles, title, transact, username } from './store';
 
@@ -21,6 +22,40 @@ const safeEmployee = { id: true, username: true, name: true, roles: true, active
 @Controller('api/manager')
 export class ManagerController {
   constructor(@Inject(Live) private readonly live: Live) {}
+
+  @Get('sales/:day')
+  async sales(@Headers('authorization') auth: string, @Param('day') rawDay: string): Promise<DailySales> {
+    const { restaurantId } = await requireStaff(db, bearer(auth), 'MANAGER');
+    const day = read(z.string().date().regex(/^[1-9]\d{3}-/), rawDay);
+    const [bounds] = await db.$queryRaw<{ start: Date; end: Date }[]>`
+      SELECT ${day}::date::timestamp AT TIME ZONE ${salesTimeZone} AS start,
+             (${day}::date + 1)::timestamp AT TIME ZONE ${salesTimeZone} AS end`;
+    const receipts = await db.receipt.findMany({
+      where: { status: 'ISSUED', settledAt: { gte: bounds.start, lt: bounds.end }, visit: { table: { restaurantId } } },
+      orderBy: { settledAt: 'asc' },
+      select: { method: true, total: true, lines: true, visit: { select: {
+        _count: { select: { orders: { where: { status: 'SERVED' } } } },
+      } } },
+    });
+    const report: DailySales = { day, total: 0, cash: 0, card: 0, orders: 0, dishes: [] };
+    const dishes = new Map<string, DailySales['dishes'][number]>();
+    for (const receipt of receipts) {
+      report.total += receipt.total;
+      if (receipt.method === 'CASH') report.cash += receipt.total;
+      if (receipt.method === 'CARD') report.card += receipt.total;
+      report.orders += receipt.visit._count.orders;
+      for (const line of asLines(receipt.lines)) {
+        if (line.canceled) continue;
+        const dish = dishes.get(line.productId) ?? { name: line.name, quantity: 0, sales: 0 };
+        dish.name = line.name;
+        dish.quantity += line.quantity;
+        dish.sales += line.quantity * line.price;
+        dishes.set(line.productId, dish);
+      }
+    }
+    report.dishes = [...dishes.values()].sort((a, b) => b.quantity - a.quantity || b.sales - a.sales || a.name.localeCompare(b.name, 'pl'));
+    return report;
+  }
 
   @Get()
   async state(@Headers('authorization') auth: string) {

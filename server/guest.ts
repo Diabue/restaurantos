@@ -2,7 +2,7 @@ import { Body, ConflictException, Controller, Get, Headers, Inject, Ip, NotFound
 import { z } from 'zod';
 import { callReasons, lineTotal } from '../shared/model';
 import { Live } from './live';
-import { asLines, editable, json, pricedLine, selection } from './orders';
+import { asLines, editable, json, lineKey, pricedLine, selection } from './orders';
 import { Attempts, bearer, db, digest, id, read, requireGuest, token, transact, type Tx } from './store';
 
 const pinInput = z.object({ pin: z.string().regex(/^\d{6}$/, 'Wpisz dokładnie 6 cyfr.') });
@@ -80,7 +80,7 @@ export class GuestController {
   async cart(@Headers('authorization') auth: string, @Body() input: unknown) {
     const command = read(z.discriminatedUnion('action', [
       z.object({ action: z.literal('add'), request: id, item: selection }),
-      z.object({ action: z.literal('change'), request: id, key: z.string().max(600), delta: z.union([z.literal(-1), z.literal(1)]).optional() }),
+      z.object({ action: z.literal('change'), request: id, key: lineKey, delta: z.union([z.literal(-1), z.literal(1)]).optional() }),
     ]), input);
     const visit = await transact(async tx => {
       const visit = await requireGuest(tx, bearer(auth));
@@ -109,7 +109,7 @@ export class GuestController {
 
   @Post('guest/order')
   async submit(@Headers('authorization') auth: string, @Body() input: unknown) {
-    const { request, snapshot } = read(z.object({ request: id, snapshot: z.array(z.object({ key: z.string().max(600), quantity: z.number().int(), price: z.number().int() })).max(100) }), input);
+    const { request, snapshot } = read(z.object({ request: id, snapshot: z.array(z.object({ key: lineKey, quantity: z.number().int(), price: z.number().int() })).max(100) }), input);
     const { visit, order } = await transact(async tx => {
       const visit = await requireGuest(tx, bearer(auth));
       const existing = await tx.order.findUnique({ where: { visitId_key: { visitId: visit.id, key: request } } });

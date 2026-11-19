@@ -5,6 +5,8 @@ import { lineTotal, type Line, type Option } from '../shared/model';
 import { id, note, type Tx } from './store';
 
 export const selection = z.object({ productId: id, optionId: z.string().max(60).optional(), note, quantity: z.number().int().min(1).max(99) });
+// A key contains the JSON-escaped option and guest note.
+export const lineKey = z.string().min(1).max(2500);
 export const asLines = (value: Prisma.JsonValue) => value as Line[];
 export const json = (value: Line[]) => JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
 export const orderInclude = { orders: { orderBy: { createdAt: 'asc' as const } }, calls: true, receipts: { orderBy: { createdAt: 'desc' as const } } };

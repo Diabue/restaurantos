@@ -2,10 +2,9 @@ import { ConflictException, NotFoundException } from '@nestjs/common';
 import type { Order } from '@prisma/client';
 import { z } from 'zod';
 import { atStation, preparationStatus } from '../shared/kitchen';
-import { asLines, json } from './orders';
+import { asLines, json, lineKey as key } from './orders';
 import { id, note } from './store';
 
-const key = z.string().min(1).max(2000);
 const station = z.enum(['KITCHEN', 'BAR']).optional();
 const quantity = z.number().int().min(1).max(99);
 const reason = note.min(1, 'Podaj powód zmiany.');

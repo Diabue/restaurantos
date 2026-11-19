@@ -9,6 +9,7 @@ import { db, passwordHash } from '../server/store';
 import { productImageDirectory } from '../server/product-images';
 import type { GuestState, Menu, Order, Receipt, Table } from '../shared/model';
 import type { Ticket } from '../shared/kitchen';
+import { salesTimeZone, type DailySales } from '../shared/sales-report';
 
 const base = process.env.TEST_ORIGIN || `http://127.0.0.1:${process.env.PORT || 3001}`;
 
@@ -126,7 +127,7 @@ test('guest PIN, two phones, waiter approval, kitchen, cancellation and fiscal r
     live.send(JSON.stringify({ kind: 'guest', secret: phone2 }));
     assert.equal(String((await joined)[0]), 'refresh');
 
-    const add = (productId: string, optionId?: string, requestKey = randomUUID()) => ({ action: 'add', request: requestKey, item: { productId, optionId, quantity: 1, note: '' } });
+    const add = (productId: string, optionId?: string, requestKey = randomUUID()) => ({ action: 'add', request: requestKey, item: { productId, optionId, quantity: 1, note: productId === fries.id ? 'Bez cebuli' : '' } });
     await request('/guest/cart', add(drink.id), phone1, 409);
     const changed = once(live, 'message');
     const first = add(fries.id);
@@ -148,6 +149,8 @@ test('guest PIN, two phones, waiter approval, kitchen, cancellation and fiscal r
     await request(`/staff/orders/${sent.id}`, { action: 'ACCEPT' }, waiter);
     const [acceptedTicket] = await queue();
     assert.equal(acceptedTicket.id, sent.id);
+    assert.equal(acceptedTicket.lines.find(line => line.name === fries.name)?.note, 'Bez cebuli');
+    assert.equal((await floor(waiter)).tables[0].visit?.orders[0].lines.find(line => line.productId === fries.id)?.note, 'Bez cebuli');
     assert.ok(acceptedTicket.acceptedAt && Date.parse(acceptedTicket.acceptedAt) >= Date.parse(sent.createdAt));
     assert.equal(acceptedTicket.kitchenAlertMinutes, 4);
     const drinkLine = acceptedTicket.lines.find(line => line.name === 'Drink')!;
@@ -205,7 +208,17 @@ test('guest PIN, two phones, waiter approval, kitchen, cancellation and fiscal r
     await request(`/fiscal/${receipt.id}/settle`, {}, waiter, 409, station);
     await request('/guest/cart', add(fries.id), phone2, 409);
     await request(`/fiscal/${receipt.id}/resolve`, { status: 'ISSUED', reference: 'DEMO-42' }, manager);
+    const today = new Intl.DateTimeFormat('sv-SE', { timeZone: salesTimeZone }).format(new Date());
+    const sales = (day: string) => request<DailySales>('/manager/sales/' + day, undefined, manager);
+    assert.equal((await sales(today)).total, 0);
+    await request('/manager/sales/' + today, undefined, waiter, 403);
+    await request('/manager/sales/2026-02-31', undefined, manager, 400);
     await request(`/fiscal/${receipt.id}/settle`, {}, waiter, undefined, station);
+    // The clock changes on this Sunday. 22:59 UTC is still Sunday in Warsaw.
+    await db.receipt.update({ where: { id: receipt.id }, data: { settledAt: new Date('2026-10-25T22:59:00Z') } });
+    assert.deepEqual(await sales('2026-10-25'), { day: '2026-10-25', total: 2800, cash: 0, card: 2800, orders: 1,
+      dishes: [{ name: fries.name, quantity: 2, sales: 2800 }] });
+    assert.equal((await sales('2026-10-26')).total, 0);
     await request('/guest', undefined, phone1, 401);
     await request('/guest', undefined, phone2, 401);
     assert.equal((await db.visit.findUniqueOrThrow({ where: { id: visit.id } })).pin, null);

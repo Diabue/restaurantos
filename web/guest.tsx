@@ -1,12 +1,18 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { Bell, Check, ChevronRight, Clock3, ImageOff, MessageCircle, Minus, Plus, ReceiptText, ShoppingBag, Trash2, Utensils } from 'lucide-react';
-import { callReasonLabel, callReasons, type CallReason, type GuestState, type Line, type Menu, type Product } from '../shared/model';
+import { callReasonLabel, callReasons, statusLabel, type CallReason, type GuestState, type Line, type Menu, type Order, type Product } from '../shared/model';
 import { api, ApiError, requestId, useLive, assetUrl } from './api';
-import { clock, Dialog, Feedback, Mark, message, money, Status, tableNumber } from './ui';
+import { clock, Dialog, Feedback, Mark, message, money, tableNumber } from './ui';
 
 const empty: GuestState = { cart: [], total: 0, orders: [] };
 const callIcons = { HELP: Bell, BILL: ReceiptText, ORDER: MessageCircle };
-type Intent = { action: 'add'; product: Product } | { action: 'call' } | { action: 'cart' };
+type Intent = { action: 'add'; product: Product; withNote?: boolean } | { action: 'call' } | { action: 'cart' };
+
+function orderLabel(order: Order) {
+  if (order.status === 'ACCEPTED') return 'Przyjęte do realizacji';
+  if (order.status === 'PREPARING' && order.lines.some(line => line.readyAt && !line.canceled)) return 'Część zamówienia gotowa';
+  return statusLabel[order.status];
+}
 
 const guestStorage = {
   read(key: string) {
@@ -126,7 +132,7 @@ export function Guest({ code: initialCode }: { code: string }) {
     } else if (next.action === 'cart') {
       setCartTab('cart');
       setCartOpen(true);
-    } else if (next.product.options.length) {
+    } else if (next.withNote || next.product.options.length) {
       setOption(''); setNote(''); setProduct(next.product);
     } else await add(next.product, activeSecret);
   }
@@ -193,6 +199,7 @@ export function Guest({ code: initialCode }: { code: string }) {
   const selected = categories.find(item => item.id === category) ?? categories[0];
   const count = guest.cart.reduce((total, line) => total + line.quantity, 0);
   const { restaurant, table } = menu;
+  const latest = guest.orders[0];
 
   return <div className="guest-page">
     <header className="guest-header">
@@ -207,6 +214,8 @@ export function Guest({ code: initialCode }: { code: string }) {
           <h1>{restaurant.name}</h1><p>{restaurant.tagline || 'Wybierz coś dla siebie z naszego menu.'}</p>
         </div>
       </section>
+      {latest && <button className="guest-order-link" onClick={() => { setCartTab('orders'); setCartOpen(true); }}>
+        <span><small>Ostatnie zamówienie · {clock(latest.createdAt)}</small><strong aria-live="polite">{orderLabel(latest)}</strong></span><ChevronRight size={20} /></button>}
       <div className="menu-tabs" aria-label="Kategorie menu" role="group">{categories.map(item => <button key={item.id} className={selected?.id === item.id ? 'selected' : ''}
         aria-pressed={selected?.id === item.id} onClick={() => setCategory(item.id)}>{item.name}</button>)}</div>
       <section className="menu-section" aria-label={selected?.name || 'Menu'}>
@@ -215,7 +224,8 @@ export function Guest({ code: initialCode }: { code: string }) {
         <Feedback text={!intent && !product && !cartOpen && !callOpen ? error : ''} />
         {selected ? <div className="dish-list">{selected.products.map(item => <article className="dish" key={item.id}>
           <div className="dish-photo">{item.image && !failedImages.includes(item.image) ? <img key={item.image} src={assetUrl(item.image)} alt="" loading="lazy" onError={() => setFailedImages(old => [...old, item.image])} /> : <ImageOff size={24} />}</div>
-          <div className="dish-copy"><h3>{item.name}</h3><p>{item.description}</p></div>
+          <div className="dish-copy"><h3>{item.name}</h3><p>{item.description}</p><button className="text-button" disabled={busy}
+            aria-label={`Dodaj z uwagą: ${item.name}`} onClick={() => start({ action: 'add', product: item, withNote: true })}>Dodaj z uwagą</button></div>
           <div className="dish-actions"><strong>{money(item.price)}</strong><button className="add-button" aria-label={`Dodaj: ${item.name}`} disabled={busy} onClick={() => start({ action: 'add', product: item })}><Plus size={20} /></button></div>
         </article>)}</div> : <p className="empty-card">Menu będzie dostępne wkrótce.</p>}
       </section>
@@ -249,11 +259,11 @@ export function Guest({ code: initialCode }: { code: string }) {
       </form>
     </Dialog>}
     {product && <Dialog title={product.name} close={() => { if (!busy) { setProduct(undefined); setError(''); } }} sheet>
-      <form className="stack" onSubmit={event => { event.preventDefault(); void run(() => add(product, secret, option, note)); }}>
-        <fieldset><legend>Wybierz opcję</legend>{product.options.map(item => <label className="option" key={item.id}><input type="radio" name="variant" required value={item.id} checked={option === item.id} onChange={() => setOption(item.id)} />
-          {item.name}<strong>{money(product.price + item.extra)}</strong></label>)}</fieldset>
-        <label>Uwaga do dania<input value={note} onChange={event => setNote(event.target.value)} maxLength={300} placeholder="Opcjonalnie" /></label>
-        <Feedback text={error} /><button className="button primary" disabled={busy || !option}><Plus size={18} /> Dodaj do koszyka</button>
+      <form className="stack" onSubmit={event => { event.preventDefault(); void run(() => add(product, secret, option || undefined, note)); }}>
+        {product.options.length > 0 && <fieldset><legend>Wybierz opcję</legend>{product.options.map(item => <label className="option" key={item.id}><input type="radio" name="variant" required value={item.id} checked={option === item.id} onChange={() => setOption(item.id)} />
+          {item.name}<strong>{money(product.price + item.extra)}</strong></label>)}</fieldset>}
+        <label>Uwaga do dania<input value={note} onChange={event => setNote(event.target.value)} maxLength={300} placeholder="Np. bez cebuli" /></label>
+        <Feedback text={error} /><button className="button primary" disabled={busy || (product.options.length > 0 && !option)}><Plus size={18} /> Dodaj do koszyka</button>
       </form>
     </Dialog>}
     {cartOpen && <Dialog title={`Stolik ${tableNumber(menu.table.number)}`} close={() => { if (!busy) { setCartOpen(false); setError(''); } }} sheet>
@@ -267,8 +277,13 @@ export function Guest({ code: initialCode }: { code: string }) {
         <div className="cart-total"><span>Suma koszyka</span><strong>{money(guest.total)}</strong></div><button className="button primary" disabled={!count || busy} onClick={submit}>Zamów <ChevronRight size={17} /></button>
       </div> : <div className="stack">
         {!guest.orders.length && <p className="empty-card">Ten stolik nie złożył jeszcze zamówienia.</p>}
-        {guest.orders.map(order => <article className="order-card" key={order.id}><div className="order-head"><Status status={order.status} /><small><Clock3 size={13} />{clock(order.createdAt)}</small></div>
-          {order.reason && <Feedback text={order.reason} />}{order.lines.map(line => <div className={`order-line ${line.canceled ? 'canceled' : ''}`} key={line.key}><div><strong>{line.quantity} × {line.name}</strong>{line.option && <small>{line.option}</small>}{line.canceled && <small>Anulowano: {line.canceled}</small>}</div></div>)}</article>)}
+        {guest.orders.map(order => <article className="order-card" key={order.id}><div className="order-head"><span className={'status status-' + order.status.toLowerCase()}><i />{orderLabel(order)}</span><small><Clock3 size={13} />{clock(order.createdAt)}</small></div>
+          {order.reason && <Feedback text={order.reason} />}{order.lines.map(line => <div className={`order-line ${line.canceled ? 'canceled' : ''}`} key={line.key}>
+            <div><strong>{line.quantity} × {line.name}</strong>{line.option && <small>{line.option}</small>}{line.note && <small>Uwaga · {line.note}</small>}
+              {line.canceled && <small>Anulowano · {line.canceled}</small>}</div>
+            {order.status === 'PREPARING' && !line.canceled && <span className={'status status-' + (line.readyAt ? 'ready' : 'preparing')}>
+              {line.readyAt ? 'Gotowe do podania' : line.startedAt ? 'W przygotowaniu' : 'W kolejce'}</span>}
+          </div>)}</article>)}
       </div>}
     </Dialog>}
   </div>;

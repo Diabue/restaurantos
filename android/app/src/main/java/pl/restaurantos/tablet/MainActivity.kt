@@ -59,7 +59,7 @@ class MainActivity : Activity() {
             settings.allowFileAccess = false
             settings.allowContentAccess = false
             settings.setSupportMultipleWindows(false)
-            setDownloadListener { url, _, _, _, _ -> saveQr(url) }
+            setDownloadListener { url, _, _, _, _ -> saveDownload(url) }
             webChromeClient = object : WebChromeClient() {
                 override fun onShowFileChooser(view: WebView, callback: ValueCallback<Array<Uri>>, params: FileChooserParams): Boolean {
                     if (!sameOrigin(Uri.parse(view.url.orEmpty()))) return false
@@ -217,23 +217,36 @@ class MainActivity : Activity() {
         dialog.show()
     }
 
-    private fun saveQr(url: String) {
-        val prefix = "data:image/png;base64,"
-        if (!url.startsWith(prefix) || url.length > 350_000) return
+    private fun saveDownload(url: String) {
+        val prefix = url.substringBefore(',', "")
+        val csv = prefix == "data:text/csv;charset=utf-8;base64"
+        if (!csv && prefix != "data:image/png;base64") return
+        if (!sameOrigin(Uri.parse(browser.url.orEmpty()))) return
+        val payload = url.substringAfter(',')
+        if (payload.length > (if (csv) 12_000_000 else 350_000)) {
+            Toast.makeText(this, "Plik jest za duży do pobrania.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val bytes = try { Base64.decode(payload, Base64.DEFAULT) } catch (_: IllegalArgumentException) { return }
+        val name = if (csv) {
+            val header = String(bytes, 0, minOf(100, bytes.size), Charsets.UTF_8).substringBefore('\n')
+            val day = Regex("""\d{4}-\d{2}-\d{2}""").find(header)?.value ?: System.currentTimeMillis().toString()
+            "RestaurantOS-sprzedaz-$day.csv"
+        } else "RestaurantOS-QR-${System.currentTimeMillis()}.png"
         val values = ContentValues().apply {
-            put(MediaStore.Downloads.DISPLAY_NAME, "RestaurantOS-QR-${System.currentTimeMillis()}.png")
-            put(MediaStore.Downloads.MIME_TYPE, "image/png")
+            put(MediaStore.Downloads.DISPLAY_NAME, name)
+            put(MediaStore.Downloads.MIME_TYPE, if (csv) "text/csv" else "image/png")
             put(MediaStore.Downloads.IS_PENDING, 1)
         }
         val target = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: return
         try {
-            contentResolver.openOutputStream(target)?.use { it.write(Base64.decode(url.removePrefix(prefix), Base64.DEFAULT)) }
+            contentResolver.openOutputStream(target)?.use { it.write(bytes) }
                 ?: error("Brak strumienia zapisu")
             contentResolver.update(target, ContentValues().apply { put(MediaStore.Downloads.IS_PENDING, 0) }, null, null)
-            Toast.makeText(this, "Kod QR zapisany w Pobranych.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Zapisano w Pobranych: $name", Toast.LENGTH_SHORT).show()
         } catch (_: Exception) {
             contentResolver.delete(target, null, null)
-            Toast.makeText(this, "Nie udało się zapisać kodu QR.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Nie udało się zapisać pliku.", Toast.LENGTH_SHORT).show()
         }
     }
 }
