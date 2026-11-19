@@ -47,6 +47,15 @@ test('guest PIN, two phones, waiter approval, kitchen, cancellation and fiscal r
   let uploadedImage: string | undefined;
 
   try {
+    assert.deepEqual(await request('/health'), { ok: true });
+    const protectedTables = await db.$queryRaw<{ name: string; protected: boolean }[]>`
+      SELECT c.relname AS name, c.relrowsecurity AS protected
+      FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname = current_schema() AND c.relkind = 'r'
+    `;
+    for (const name of ['Employee', 'Visit', 'GuestAccess', 'StaffAccess', '_prisma_migrations']) {
+      assert.equal(protectedTables.find(table => table.name === name)?.protected, true, `${name} must reject direct unprivileged reads`);
+    }
     const [waiter, kitchen, manager, outsider] = await Promise.all([login('waiter'), login('kitchen'), login('manager'), login('waiter', otherSlug)]);
     const floor = (secret: string) => request<{ tables: Table[] }>('/staff/floor', undefined, secret);
     const queue = () => request<Order[]>('/staff/kitchen', undefined, kitchen);

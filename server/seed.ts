@@ -2,6 +2,10 @@ import { db, demo, passwordHash } from './store';
 
 try {
   if (demo()) {
+    const password = process.env.DEMO_PASSWORD || 'demo1234';
+    if (process.env.NODE_ENV === 'production' && (password.length < 16 || password === 'demo1234')) {
+      throw new Error('Ustaw unikalne DEMO_PASSWORD z minimum 16 znaków przed utworzeniem internetowego demo.');
+    }
     const restaurant = await db.restaurant.upsert({ where: { slug: 'oliwa' }, update: {}, create: {
       slug: 'oliwa', name: 'Oliwa i Ogień', tagline: 'Kuchnia sezonowa · przy wspólnym stole', image: '/images/hero.jpg',
     } });
@@ -36,7 +40,7 @@ try {
       ['manager', 'Alicja', ['WAITER', 'KITCHEN', 'MANAGER'], true], ['kelner', 'Michał', ['WAITER'], true], ['kuchnia', 'Kuchnia', ['KITCHEN'], false],
     ] as const) {
       await db.employee.upsert({ where: { restaurantId_username: { restaurantId: restaurant.id, username } }, update: {}, create: {
-        restaurantId: restaurant.id, username, name, roles: [...roles], canFiscalize, password: passwordHash('demo1234'),
+        restaurantId: restaurant.id, username, name, roles: [...roles], canFiscalize, password: passwordHash(password),
       } });
     }
     console.log('Demo Oliwa i Ogień gotowe. Gość może ustawić własny PIN przy wolnym stoliku.');

@@ -4,6 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "build:web": "vite build",
+    "start": "node scripts/start.mjs",
+    "storage:setup": "tsx --env-file-if-exists=.env scripts/setup-storage.ts",
+    "test:storage": "tsx --test tests/storage.test.ts",
     "dev": "vite --host 0.0.0.0",
     "demo": "node scripts/demo.mjs",
     "test:demo": "node scripts/demo.mjs --test",
@@ -19,6 +23,7 @@
     "@nestjs/core": "^11.1.0",
     "@nestjs/platform-express": "^11.1.0",
     "@prisma/client": "6.19.3",
+    "@supabase/supabase-js": "2.119.2",
     "express": "^5.1.0",
     "lucide-react": "^0.468.0",
     "qrcode": "^1.5.4",

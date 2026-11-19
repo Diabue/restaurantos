@@ -2,6 +2,8 @@
 
 Polskie menu QR, wspólny koszyk stolika i aplikacja Android z trybami Kelner, Kuchnia i Manager. Wersja demonstracyjna używa prawdziwej bazy PostgreSQL i symuluje wystawianie paragonu.
 
+Frontend można publikować automatycznie z tego repozytorium na [Cloudflare Pages](docs/cloudflare-pages.md). Android pozostaje w tym samym repozytorium. Backend wymaga osobnego uruchomienia; [instrukcja backendu i Supabase](docs/deployment.md) opisuje również opcjonalny wariant Render.
+
 ## Zrzuty ekranu
 
 ### Kelner

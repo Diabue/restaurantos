@@ -1,0 +1,32 @@
+services:
+  - type: web
+    name: restaurantos-demo
+    runtime: docker
+    plan: free
+    region: frankfurt
+    numInstances: 1
+    healthCheckPath: /api/health
+    autoDeployTrigger: commit
+    domains:
+      - demo.maxstronytest.uk
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: HOST
+        value: 0.0.0.0
+      - key: TRUST_PROXY_HOPS
+        value: "1"
+      - key: DEMO_MODE
+        value: "1"
+      - key: SEED_ON_START
+        value: "1"
+      - key: DEMO_PASSWORD
+        generateValue: true
+      - key: DATABASE_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SECRET_KEY
+        sync: false
+      - key: SUPABASE_STORAGE_BUCKET
+        value: restaurantos-products
