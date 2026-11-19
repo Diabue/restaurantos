@@ -58,4 +58,4 @@ if (-not $ready) { throw 'Emulator nie uruchomił Androida w wyznaczonym czasie.
 if ($LASTEXITCODE -ne 0) { throw 'Nie udało się zainstalować APK.' }
 & $adb -s $device shell am start -n pl.restaurantos.tablet/.MainActivity
 if ($LASTEXITCODE -ne 0) { throw 'Nie udało się uruchomić RestaurantOS.' }
-Write-Host 'Lokal: oliwa · login: manager · hasło: demo1234'
+Write-Host 'Serwer: https://restaurantos.maxstronytest.uk · lokal: oliwa · login: manager · hasło: .local/cloud-access.txt'

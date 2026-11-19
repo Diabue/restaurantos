@@ -151,6 +151,11 @@ class MainActivity : Activity() {
     }
 
     private fun loadStation(force: Boolean = false) {
+        // Migrate existing test installations once; later manual settings persist.
+        if (!preferences.getBoolean("cloud_default_applied", false)) {
+            preferences.edit().putString("server_url", BuildConfig.DEFAULT_SERVER)
+                .putBoolean("cloud_default_applied", true).apply()
+        }
         val managed = restrictions.applicationRestrictions
         val configured = managed.getString("server_url")?.takeIf { it.isNotBlank() }
         settingsButton.visibility = if (configured != null || policies.isLockTaskPermitted(packageName)) View.GONE else View.VISIBLE

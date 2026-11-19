@@ -78,13 +78,13 @@ Pierwsze uruchomienie pobierze lokalny PostgreSQL do `.local`, wykona migracje i
 
 ## Emulator Androida
 
-Zostaw uruchomione demo. W drugim terminalu uruchom:
+Uruchom emulator:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\emulator.ps1
 ```
 
-Skrypt tworzy wirtualny Pixel Tablet z Androidem 35, uruchamia go, instaluje debug APK i otwiera RestaurantOS. Opcja `-Build` przebudowuje APK. W aplikacji wpisz **oliwa**, **manager**, **demo1234**. Menu gościa możesz równolegle otworzyć w przeglądarce na Windows. Aplikacja debug łączy się z serwerem hosta przez adres emulatora `http://10.0.2.2:3001`.
+Skrypt tworzy wirtualny Pixel Tablet z Androidem 35, instaluje debug APK i otwiera RestaurantOS. Opcja `-Build` przebudowuje APK. Od wersji 0.2.0 domyślnym serwerem jest `https://restaurantos.maxstronytest.uk`. Lokal **oliwa**, login **manager**, hasło wygenerowane dla chmury (inne niż lokalne demo1234). Przy aktualizacji stary adres testowy jest jednorazowo zastępowany domeną. Do testów lokalnych można później ręcznie ustawić `http://10.0.2.2:3001` i uruchomić demo na komputerze.
 
 Na innym komputerze zainstaluj JDK 17 lub 21 oraz pakiety Android SDK: Command-line Tools, Platform-Tools, Emulator, Android SDK Platform 35, Build-Tools 35.0.0 i obraz Google APIs x86_64 dla Androida 35. Włącz akcelerację wirtualizacji Windows i ustaw `ANDROID_HOME` na katalog SDK, jeśli jest niestandardowy. Skrypt rozpoznaje też SDK w `.local/android-sdk`. APK debug znajduje się w `android/app/build/outputs/apk/debug/app-debug.apk`.
 

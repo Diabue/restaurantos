@@ -10,14 +10,9 @@ android {
         applicationId = "pl.restaurantos.tablet"
         minSdk = 29
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
-        buildConfigField("String", "DEFAULT_SERVER", "\"\"")
-    }
-    buildTypes {
-        debug {
-            buildConfigField("String", "DEFAULT_SERVER", "\"http://10.0.2.2:3001\"")
-        }
+        versionCode = 2
+        versionName = "0.2.0"
+        buildConfigField("String", "DEFAULT_SERVER", "\"https://restaurantos.maxstronytest.uk\"")
     }
     buildFeatures { buildConfig = true }
     compileOptions {
