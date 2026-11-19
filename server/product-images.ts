@@ -32,6 +32,7 @@ export async function storeProductImage(restaurantId: string, bytes: Buffer) {
   const name = randomUUID() + '.' + extension;
   const remote = cloudImageStorage();
   if (remote) {
+    await remote.ensureBucket();
     const file = await remote.upload(restaurantId + '/' + name, bytes, extension === 'jpg' ? 'image/jpeg' : `image/${extension}`);
     return { url: '/uploads/products/' + restaurantId + '/' + name, discard: file.discard };
   }

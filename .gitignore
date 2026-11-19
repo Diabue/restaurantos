@@ -5,6 +5,8 @@ dist/
 !.env.example
 !.env.cloud.example
 .local/
+prisma/edge.prisma
+supabase/functions/restaurantos-api/app.mjs
 *.log
 android/.gradle/
 android/**/build/

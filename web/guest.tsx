@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { Bell, Check, ChevronRight, Clock3, ImageOff, Minus, Plus, ShoppingBag, Trash2, Utensils } from 'lucide-react';
 import type { GuestState, Line, Menu, Product } from '../shared/model';
-import { api, ApiError, requestId, useLive } from './api';
+import { api, ApiError, requestId, useLive, assetUrl } from './api';
 import { clock, Dialog, Feedback, Mark, message, money, Status, tableNumber } from './ui';
 
 const empty: GuestState = { cart: [], total: 0, orders: [] };
@@ -196,7 +196,7 @@ export function Guest({ code }: { code: string }) {
           {selected && <span className="section-count">{selected.products.length} {selected.products.length === 1 ? 'pozycja' : 'pozycje'}</span>}</div>
         <Feedback text={!intent && !product && !cartOpen ? error : ''} />
         {selected ? <div className="dish-list">{selected.products.map(item => <article className="dish" key={item.id}>
-          <div className="dish-photo">{item.image && !failedImages.includes(item.image) ? <img key={item.image} src={item.image} alt="" loading="lazy" onError={() => setFailedImages(old => [...old, item.image])} /> : <ImageOff size={24} />}</div>
+          <div className="dish-photo">{item.image && !failedImages.includes(item.image) ? <img key={item.image} src={assetUrl(item.image)} alt="" loading="lazy" onError={() => setFailedImages(old => [...old, item.image])} /> : <ImageOff size={24} />}</div>
           <div className="dish-copy"><h3>{item.name}</h3><p>{item.description}</p></div>
           <div className="dish-actions"><strong>{money(item.price)}</strong><button className="add-button" aria-label={`Dodaj: ${item.name}`} disabled={busy} onClick={() => start({ action: 'add', product: item })}><Plus size={20} /></button></div>
         </article>)}</div> : <p className="empty-card">Menu będzie dostępne wkrótce.</p>}

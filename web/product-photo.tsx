@@ -1,3 +1,4 @@
+import { assetUrl } from './api';
 import { useEffect, useRef, useState } from 'react';
 import { Feedback } from './ui';
 
@@ -35,6 +36,6 @@ export function ProductPhoto({ image = '' }: { image?: string }) {
       setError('');
     }}>Wyczyść wybór pliku</button>}
     <label>Adres zdjęcia (opcjonalnie)<input name="image" value={address} onChange={event => setAddress(event.target.value)} readOnly={!!selected} /></label>
-    {canPreview && <img className="venue-preview" src={source} alt="Podgląd zdjęcia dania" />}
+    {canPreview && <img className="venue-preview" src={assetUrl(source)} alt="Podgląd zdjęcia dania" />}
   </fieldset>;
 }

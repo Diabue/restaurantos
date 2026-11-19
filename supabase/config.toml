@@ -1,0 +1,4 @@
+[functions.restaurantos-api]
+# Staff/guest opaque tokens are authenticated by the application controllers.
+# Menu and login endpoints intentionally accept unauthenticated requests.
+verify_jwt = false

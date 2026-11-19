@@ -1,5 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 
+const cloudOrigin = (import.meta as unknown as {env:Record<string,string>}).env.VITE_SUPABASE_URL;
+const cloudApi = cloudOrigin ? `${cloudOrigin}/functions/v1/restaurantos-api` : '';
+export const assetUrl = (url: string) => cloudApi && url.startsWith('/uploads/') ? cloudApi + url : url;
+
 export class ApiError extends Error {
   constructor(readonly status: number, message: string) { super(message); }
 }
@@ -8,10 +12,10 @@ export async function api<T>(path: string, { secret, body, station }: { secret?:
   let response: Response;
   const multipart = body instanceof FormData;
   try {
-    response = await fetch(`/api${path}`, {
+    response = await fetch(`${cloudApi}/api${path}`, {
       method: body === undefined ? 'GET' : 'POST',
       headers: {
-        ...(secret ? { Authorization: `Bearer ${secret}` } : {}),
+        ...(secret ? cloudApi ? { 'X-Restaurant-Token': secret } : { Authorization: `Bearer ${secret}` } : {}),
         ...(body !== undefined && !multipart ? { 'Content-Type': 'application/json' } : {}),
         ...(station ? { 'X-Station-Key': station } : {}),
       },
@@ -40,6 +44,14 @@ export function useLive(kind: 'guest' | 'menu' | 'staff', secret: string, code: 
   useEffect(() => {
     setOnline(false);
     if (!secret && kind !== 'menu') return;
+    if (cloudApi) {
+      let active = true;
+      const update = () => { if (active) { current.current(); setOnline(navigator.onLine); } };
+      const interval = setInterval(update, 3500);
+      update();
+      window.addEventListener('online', update);
+      return () => { active = false; clearInterval(interval); window.removeEventListener('online', update); };
+    }
     let socket: WebSocket;
     let retry: ReturnType<typeof setTimeout>;
     let closed = false;
