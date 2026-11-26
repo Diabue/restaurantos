@@ -41,6 +41,8 @@ class MainActivity : Activity() {
     private var startPage: Uri? = null
     private var photoChooser: ValueCallback<Array<Uri>>? = null
     private val photoRequestCode = 8
+    private val downloadRequestCode = 9
+    private var pendingDownload: ByteArray? = null
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -124,6 +126,20 @@ class MainActivity : Activity() {
     @Deprecated("Activity result callback for the WebView photo picker")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == downloadRequestCode) {
+            val bytes = pendingDownload
+            pendingDownload = null
+            val uri = data?.data
+            if (resultCode == RESULT_OK && uri != null && bytes != null) {
+                try {
+                    contentResolver.openOutputStream(uri)?.use { it.write(bytes) } ?: error("Brak strumienia zapisu")
+                    Toast.makeText(this, "Plik został zapisany.", Toast.LENGTH_SHORT).show()
+                } catch (_: Exception) {
+                    Toast.makeText(this, "Nie udało się zapisać pliku.", Toast.LENGTH_SHORT).show()
+                }
+            }
+            return
+        }
         if (requestCode != photoRequestCode) return
         val selected = data?.data?.takeIf { resultCode == RESULT_OK && it.scheme == ContentResolver.SCHEME_CONTENT }
         photoChooser?.onReceiveValue(selected?.let { arrayOf(it) })
@@ -233,6 +249,21 @@ class MainActivity : Activity() {
             val day = Regex("""\d{4}-\d{2}-\d{2}""").find(header)?.value ?: System.currentTimeMillis().toString()
             "RestaurantOS-sprzedaz-$day.csv"
         } else "RestaurantOS-QR-${System.currentTimeMillis()}.png"
+        if (Build.VERSION.SDK_INT < 29) {
+            pendingDownload = bytes
+            val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type = if (csv) "text/csv" else "image/png"
+                putExtra(Intent.EXTRA_TITLE, name)
+            }
+            try {
+                startActivityForResult(intent, downloadRequestCode)
+            } catch (_: ActivityNotFoundException) {
+                pendingDownload = null
+                Toast.makeText(this, "Zapisywanie plików jest niedostępne.", Toast.LENGTH_SHORT).show()
+            }
+            return
+        }
         val values = ContentValues().apply {
             put(MediaStore.Downloads.DISPLAY_NAME, name)
             put(MediaStore.Downloads.MIME_TYPE, if (csv) "text/csv" else "image/png")
